@@ -68,6 +68,20 @@ def _positive_float(value: str) -> float:
     return parsed
 
 
+def _pitch_hz(value: str) -> str:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"pitch must be an integer Hz offset, got {value!r}"
+        ) from exc
+    if not -50 <= parsed <= 50:
+        raise argparse.ArgumentTypeError(
+            f"pitch must be between -50 and 50 Hz, got {parsed}"
+        )
+    return f"{parsed:+d}Hz"
+
+
 def _percent_position(value: str) -> float:
     parsed = float(value)
     if not math.isfinite(parsed) or parsed < 0 or parsed > 100:
@@ -308,6 +322,16 @@ Output and exit status:
         ),
     )
     audio_group.add_argument(
+        "--voice-pitch",
+        type=_pitch_hz,
+        default=None,
+        metavar="HZ",
+        help=(
+            "speech pitch offset in Hz, integer between -50 and 50 (default: 0); "
+            "negative = deeper/graver voice, positive = higher-pitched"
+        ),
+    )
+    audio_group.add_argument(
         "--custom-audio-file",
         default=None,
         metavar="PATH",
@@ -542,6 +566,7 @@ def build_video_params(args: argparse.Namespace) -> VideoParams:
         "n_threads",
         "voice_volume",
         "voice_rate",
+        "voice_pitch",
         "custom_audio_file",
         "bgm_type",
         "bgm_file",

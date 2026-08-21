@@ -417,6 +417,7 @@ def tts(
     voice_rate: float,
     voice_file: str,
     voice_volume: float = 1.0,
+    voice_pitch: str = "+0Hz",
 ) -> Union[SubMaker, None]:
     if is_no_voice(voice_name):
         duration_seconds = estimate_no_voice_duration(text)
@@ -503,7 +504,7 @@ def tts(
         else:
             logger.error(f"Invalid chatterbox voice name format: {voice_name}")
             return None
-    return azure_tts_v1(text, voice_name, voice_rate, voice_file)
+    return azure_tts_v1(text, voice_name, voice_rate, voice_file, voice_pitch=voice_pitch)
 
 
 def convert_rate_to_percent(rate: float) -> str:
@@ -627,7 +628,7 @@ def populate_legacy_submaker_with_full_text(
 
 
 def create_edge_tts_communicate(
-    text: str, voice_name: str, rate_str: str
+    text: str, voice_name: str, rate_str: str, pitch_str: str = "+0Hz"
 ) -> edge_tts.Communicate:
     """
     按当前已安装的 edge_tts 版本构造 Communicate 对象。
@@ -639,9 +640,11 @@ def create_edge_tts_communicate(
        `unexpected keyword argument 'boundary'`，导致整个 TTS 链路失败。
 
     因此这里先根据构造函数签名探测当前版本支持的参数，再决定是否传入
-    `boundary`，让同一份代码同时兼容旧版和新版依赖。
+    `boundary`，让同一份代码同时兼容旧版和新版依赖。`pitch` 是 edge_tts 长期
+    支持的稳定参数（不像 `boundary` 那样是新增特性），因此始终传入，
+    用于调节音色的低沉/明亮程度而不改变语速。
     """
-    communicate_kwargs = {"rate": rate_str}
+    communicate_kwargs = {"rate": rate_str, "pitch": pitch_str}
     communicate_signature = inspect.signature(edge_tts.Communicate)
 
     if "boundary" in communicate_signature.parameters:
@@ -784,7 +787,11 @@ def stream_edge_tts_chunks(
 
 
 def azure_tts_v1(
-    text: str, voice_name: str, voice_rate: float, voice_file: str
+    text: str,
+    voice_name: str,
+    voice_rate: float,
+    voice_file: str,
+    voice_pitch: str = "+0Hz",
 ) -> Union[SubMaker, None]:
     voice_name = parse_voice_name(voice_name)
     text = text.strip()
@@ -797,7 +804,9 @@ def azure_tts_v1(
             # 1. 新版支持 `boundary` + `stream_sync()`
             # 2. 旧版不支持 `boundary`，且通常只暴露异步 `stream()`
             ensure_file_path_exists(voice_file)
-            communicate = create_edge_tts_communicate(text, voice_name, rate_str)
+            communicate = create_edge_tts_communicate(
+                text, voice_name, rate_str, pitch_str=voice_pitch
+            )
             sub_maker = edge_tts.SubMaker()
             timeout_seconds = get_edge_tts_timeout_seconds()
 

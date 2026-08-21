@@ -102,6 +102,8 @@ class VideoParams(BaseModel):
     voice_name: Optional[str] = ""
     voice_volume: Optional[float] = 1.0
     voice_rate: Optional[float] = 1.0
+    # Tom da voz em Hz (edge-tts SSML pitch); negativo = mais grave, positivo = mais agudo.
+    voice_pitch: Optional[str] = "+0Hz"
     bgm_type: Optional[str] = "random"
     bgm_file: Optional[str] = ""
     bgm_volume: Optional[float] = 0.2

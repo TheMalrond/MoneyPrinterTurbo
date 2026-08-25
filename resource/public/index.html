@@ -43,16 +43,23 @@
     <textarea id="input-script" rows="7" required
       placeholder="Escreva aqui o texto que será narrado no vídeo, em português, como se fosse falado em voz alta."></textarea>
 
-    <label for="select-video-source">Fonte das imagens</label>
-    <select id="select-video-source">
-      <option value="pexels" selected>Banco de imagens (Pexels)</option>
-      <option value="ybera_bank">Produtos Ybera</option>
-    </select>
+    <label>Fonte das imagens</label>
+    <div class="source-group">
+      <label class="checkbox-row">
+        <input id="check-source-ybera" type="checkbox" />
+        Produtos Ybera
+      </label>
+      <label class="checkbox-row">
+        <input id="check-source-pexels" type="checkbox" checked />
+        Banco de imagens (Pexels)
+      </label>
+    </div>
+    <p class="hint" id="hint-video-source">Pode marcar as duas: o Clippa usa fotos de produto Ybera nos trechos que citarem a linha (ex.: Fashion Gold), e completa o resto do vídeo com o banco de imagens. Marcando só uma, usa só ela — mas se "Produtos Ybera" sozinho não achar nenhum produto, o Clippa recorre ao banco de imagens para não travar a geração.</p>
 
     <label for="input-terms">Temas visuais (separados por vírgula)</label>
     <textarea id="input-terms" rows="2" required
       placeholder="Ex.: mãos contando dinheiro real, livro aberto sendo lido de perto, lâmpada a óleo antiga acesa"></textarea>
-    <p class="hint">Esses termos guiam a busca de vídeos de banco (Pexels). Pode escrever em português — o Clippa traduz automaticamente. Seja específico: termos genéricos podem trazer clipes de desenho/3D em vez de fotografia real. Em "Produtos Ybera", citar o nome do produto/linha no roteiro (ex.: Fashion Gold, Spa Pet) ajuda a achar as fotos certas — sem match, o Clippa usa o banco genérico automaticamente.</p>
+    <p class="hint">Esses termos guiam a busca no banco de imagens (Pexels). Pode escrever em português — o Clippa traduz automaticamente. Seja específico: termos genéricos podem trazer clipes de desenho/3D em vez de fotografia real. Citar o nome do produto/linha no roteiro (ex.: Fashion Gold, Spa Pet) ajuda o Clippa a achar as fotos certas quando "Produtos Ybera" estiver marcado.</p>
 
     <div class="grid-2">
       <div>

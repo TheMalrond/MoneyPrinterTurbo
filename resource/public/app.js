@@ -118,6 +118,13 @@
     return body;
   }
 
+  function selectedVideoSources() {
+    const sources = [];
+    if (el("check-source-ybera").checked) sources.push("ybera_bank");
+    if (el("check-source-pexels").checked) sources.push("pexels");
+    return sources;
+  }
+
   function buildRequestBody() {
     const script = el("input-script").value.trim();
     const terms = el("input-terms").value.trim();
@@ -127,7 +134,7 @@
       video_subject: subject,
       video_script: script,
       video_terms: terms,
-      video_source: el("select-video-source").value,
+      video_source: selectedVideoSources().join(","),
       video_aspect: el("select-aspect").value,
       video_concat_mode: "random",
       video_clip_duration: 5,
@@ -191,6 +198,12 @@
 
     if (!getApiKey()) {
       openSettings();
+      return;
+    }
+
+    if (selectedVideoSources().length === 0) {
+      showCard("status");
+      showStatusError("Selecione pelo menos uma fonte de imagens.");
       return;
     }
 

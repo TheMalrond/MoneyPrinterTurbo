@@ -123,6 +123,12 @@ input[type="color"] {
   gap: 12px;
 }
 
+.source-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;

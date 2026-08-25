@@ -324,10 +324,16 @@ def generate_terms(task_id, params, video_script):
 
         # Busca de banco (Pexels/Pixabay) funciona muito melhor em inglês.
         # Material local não faz busca nenhuma, então pular a tradução aí
-        # evita uma chamada de rede sem propósito. O banco Ybera também pula:
-        # os nomes das pastas de produto são em português (ex.: "Fashion Gold"),
-        # e traduzir os termos pra inglês só atrapalharia o match.
-        if params.video_source not in ("local", "ybera_bank"):
+        # evita uma chamada de rede sem propósito. Se "ybera_bank" estiver
+        # entre as fontes selecionadas (sozinho ou combinado, ex.:
+        # "ybera_bank,pexels"), também pula: os nomes das pastas de produto
+        # são em português (ex.: "Fashion Gold") e traduzir os termos
+        # atrapalharia o match — mesmo quando Pexels também está selecionado
+        # como fonte de preenchimento, a busca do Pexels em português ainda
+        # funciona, só não é o ideal.
+        if params.video_source != "local" and "ybera_bank" not in _parse_video_sources(
+            params.video_source
+        ):
             video_terms = translate.translate_terms_to_english(video_terms)
 
         logger.debug(f"video terms: {utils.to_json(video_terms)}")
@@ -588,13 +594,21 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
     return subtitle_path
 
 
-def _download_pexels_materials(task_id, params, video_terms, audio_duration, source=None):
+def _parse_video_sources(video_source: str) -> list[str]:
+    """Suporta fontes acumuladas (o PWA manda uma fonte por checkbox marcado,
+    separadas por vírgula, ex.: "ybera_bank,pexels"). Uma única fonte sem
+    vírgula continua funcionando exatamente como sempre funcionou (CLI/WebUI)."""
+    if not video_source:
+        return ["pexels"]
+    sources = [s.strip() for s in re.split(r"[,，]", video_source) if s.strip()]
+    return sources or ["pexels"]
+
+
+def _download_stock_materials(task_id, params, video_terms, target_duration_seconds, source):
     """Baixa material de banco de vídeo (Pexels/Pixabay/etc) encaminhando todos
-    os parâmetros relevantes. Extraído pra ser reaproveitado tanto pelo fluxo
-    normal (source=None usa params.video_source) quanto pelo fallback do banco
-    Ybera quando não acha produto correspondente (source="pexels" explícito,
-    já que ali params.video_source ainda é "ybera_bank")."""
-    source = source or params.video_source
+    os parâmetros relevantes. `target_duration_seconds` já é a duração final
+    desejada (video_count e o que outras fontes já cobriram já descontados
+    pelo chamador)."""
     logger.info(f"\n\n## downloading videos from {source}")
     # 顺序匹配模式只在用户显式开启时生效。这里强制素材下载按关键词顺序
     # 轮询，避免某个早期关键词下载太多素材，把后续脚本主题挤出最终时间线。
@@ -608,10 +622,69 @@ def _download_pexels_materials(task_id, params, video_terms, audio_duration, sou
             if params.match_materials_to_script
             else params.video_concat_mode
         ),
-        audio_duration=audio_duration * params.video_count,
+        audio_duration=target_duration_seconds,
         max_clip_duration=params.video_clip_duration,
         match_script_order=params.match_materials_to_script,
     )
+
+
+def _download_combined_materials(task_id, params, video_terms, audio_duration, video_script):
+    """Combina quantas fontes o usuário marcar (ex.: Produtos Ybera + Pexels)
+    em vez de escolher só uma. "ybera_bank" roda primeiro, se selecionado, e
+    cobre o quanto conseguir com fotos reais de produto; o que sobrar de
+    duração é completado pela primeira fonte de banco de vídeo selecionada.
+    Se só "ybera_bank" foi marcado e ele não achou nenhum produto, cai pro
+    Pexels como último recurso — pra nunca travar a geração por causa de
+    uma única fonte vazia."""
+    sources = _parse_video_sources(params.video_source)
+    target_duration = audio_duration * params.video_count
+    remaining = target_duration
+    collected_paths = []
+
+    if "ybera_bank" in sources:
+        logger.info("\n\n## searching Ybera product bank")
+        search_text = f"{video_script} {' '.join(video_terms or [])}"
+        needed_count = min(
+            15, max(1, math.ceil(remaining / max(params.video_clip_duration, 1)))
+        )
+        local_paths = ybera_bank.get_materials(task_id, search_text, needed_count)
+        if local_paths:
+            materials = [
+                MaterialInfo(url=p, provider="ybera_bank") for p in local_paths
+            ]
+            processed = video.preprocess_video(
+                materials=materials, clip_duration=params.video_clip_duration
+            )
+            if processed:
+                processed_paths = [material_info.url for material_info in processed]
+                collected_paths.extend(processed_paths)
+                remaining -= len(processed_paths) * params.video_clip_duration
+                logger.info(
+                    f"ybera_bank: covered {len(processed_paths)} clip(s), "
+                    f"{max(remaining, 0):.1f}s remaining for other sources"
+                )
+            else:
+                logger.warning("ybera_bank: matched materials failed preprocessing")
+        else:
+            logger.info("ybera_bank: no product match")
+
+    stock_sources = [s for s in sources if s != "ybera_bank"]
+    if not stock_sources and not collected_paths:
+        logger.warning(
+            "ybera_bank: no material from any selected source, "
+            "falling back to Pexels so the video isn't blocked"
+        )
+        stock_sources = ["pexels"]
+
+    if stock_sources and remaining > 0:
+        # material.download_videos só aceita uma fonte por chamada; se mais de
+        # uma fonte de banco de vídeo foi marcada, usa a primeira da lista.
+        downloaded = _download_stock_materials(
+            task_id, params, video_terms, remaining, stock_sources[0]
+        )
+        collected_paths.extend(downloaded or [])
+
+    return collected_paths
 
 
 def get_video_materials(
@@ -696,50 +769,9 @@ def get_video_materials(
                 },
             )
             return None
-    elif params.video_source == "ybera_bank":
-        logger.info("\n\n## searching Ybera product bank")
-        search_text = f"{video_script} {' '.join(video_terms or [])}"
-        needed_count = min(
-            15,
-            max(
-                1,
-                math.ceil(
-                    (audio_duration * params.video_count)
-                    / max(params.video_clip_duration, 1)
-                ),
-            ),
-        )
-        local_paths = ybera_bank.get_materials(task_id, search_text, needed_count)
-        if local_paths:
-            materials = [
-                MaterialInfo(url=p, provider="ybera_bank") for p in local_paths
-            ]
-            processed = video.preprocess_video(
-                materials=materials, clip_duration=params.video_clip_duration
-            )
-            if processed:
-                return [material_info.url for material_info in processed]
-            logger.warning(
-                "ybera_bank: matched materials failed preprocessing, "
-                "falling back to Pexels"
-            )
-        else:
-            logger.warning("ybera_bank: no product match, falling back to Pexels")
-
-        downloaded_videos = _download_pexels_materials(
-            task_id, params, video_terms, audio_duration, source="pexels"
-        )
-        if not downloaded_videos:
-            _mark_task_failed(
-                task_id,
-                "materials",
-                "failed to download fallback video materials from pexels",
-            )
-            return None
-        return downloaded_videos
     else:
-        downloaded_videos = _download_pexels_materials(
-            task_id, params, video_terms, audio_duration
+        downloaded_videos = _download_combined_materials(
+            task_id, params, video_terms, audio_duration, video_script
         )
         if not downloaded_videos:
             _mark_task_failed(

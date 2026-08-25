@@ -536,6 +536,49 @@ class TestTaskService(unittest.TestCase):
         self.assertEqual(result, ["/abs/pexels1.mp4"])
         self.assertEqual(download_videos.call_args.kwargs["source"], "pexels")
 
+    def test_ybera_bank_combined_with_pexels_fills_remaining_duration(self):
+        """Com as duas fontes marcadas (video_source="ybera_bank,pexels"), o
+        que o banco Ybera não cobrir deve ser completado pelo Pexels na
+        mesma tarefa, em vez de escolher só uma fonte."""
+        params = VideoParams(
+            video_subject="Progressiva Fashion Gold",
+            video_source="ybera_bank,pexels",
+            video_aspect="9:16",
+            video_concat_mode="random",
+            video_clip_duration=5,
+            video_count=1,
+            match_materials_to_script=False,
+        )
+        # 1 clipe de 5s do banco Ybera, restam 5s de um total de 10s.
+        processed_materials = [
+            MaterialInfo(url="/abs/ybera1.mp4", provider="ybera_bank"),
+        ]
+
+        with (
+            patch.object(
+                tm.ybera_bank,
+                "get_materials",
+                return_value=["ybera_bank/task-z/img1.jpg"],
+            ),
+            patch.object(
+                tm.video, "preprocess_video", return_value=processed_materials
+            ),
+            patch.object(
+                tm.material, "download_videos", return_value=["/abs/pexels1.mp4"]
+            ) as download_videos,
+        ):
+            result = tm.get_video_materials(
+                "task-z",
+                params,
+                ["fashion gold"],
+                10,
+                video_script="Compre a progressiva Fashion Gold hoje na Ybera.",
+            )
+
+        self.assertEqual(result, ["/abs/ybera1.mp4", "/abs/pexels1.mp4"])
+        self.assertEqual(download_videos.call_args.kwargs["source"], "pexels")
+        self.assertEqual(download_videos.call_args.kwargs["audio_duration"], 5)
+
     def test_mark_task_failed_preserves_a_specific_service_failure(self):
         """服务层已记录具体错误时，编排层不能再用通用错误覆盖它。"""
         state = MemoryState()

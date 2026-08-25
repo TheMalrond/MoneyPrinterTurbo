@@ -3,9 +3,9 @@
 Clippa transforma um roteiro em vídeo narrado — voz neural, legenda sincronizada
 e imagens à sua escolha — pronto para Reels, Stories, TikTok ou YouTube.
 
-- **App:** https://clippa-zyls.onrender.com
+- **App:** https://clippa-633789634558.southamerica-east1.run.app
 - **Landing page:** https://clippa-nine.vercel.app
-- **Motor:** este repositório (fork de [MoneyPrinterTurbo](https://github.com/harry0703/MoneyPrinterTurbo)), rodando como Web Service no Render (free tier)
+- **Motor:** este repositório (fork de [MoneyPrinterTurbo](https://github.com/harry0703/MoneyPrinterTurbo)), rodando no Google Cloud Run (região São Paulo)
 
 ## Como usar
 
@@ -23,9 +23,9 @@ e imagens à sua escolha — pronto para Reels, Stories, TikTok ou YouTube.
 - Evite frases muito curtas após vírgula — a legenda quebra por frase e pode isolar fragmentos.
 - **Legenda centralizada** é mais segura para Reels/Stories — no rodapé, fica atrás da UI do Instagram.
 
-## Limitações (plano gratuito)
+## Limitações
 
-- **Cold-start:** após 15 minutos sem uso, o próximo pedido pode levar 30–60s a mais para começar.
+- **Cold-start:** sem uso recente, o próximo pedido pode levar alguns segundos a mais para começar (a instância "acorda").
 - **Armazenamento efêmero:** vídeos gerados não persistem entre reinícios do servidor.
 
 ## Para quem for mexer no código

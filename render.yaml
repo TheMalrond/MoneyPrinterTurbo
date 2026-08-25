@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: video-factory
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python main.py
+    plan: free
+    healthCheckPath: /ping
+    envVars:
+      - key: CORS_ALLOWED_ORIGINS
+        value: ""
+    secretFiles:
+      - name: config.toml

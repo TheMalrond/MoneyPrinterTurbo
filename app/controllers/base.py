@@ -19,8 +19,14 @@ def get_api_key(request: Request):
 
 
 def verify_token(request: Request):
+    expected_token = config.app.get("api_key", "")
+    if not expected_token:
+        # Nenhuma api_key configurada: autenticação fica desligada (uso local/dev).
+        # Só passa a exigir x-api-key quando o operador define uma chave real,
+        # o que é obrigatório antes de expor a API na internet (ex.: Render).
+        return
     token = get_api_key(request)
-    if token != config.app.get("api_key", ""):
+    if token != expected_token:
         request_id = get_task_id(request)
         request_url = request.url
         user_agent = request.headers.get("user-agent")

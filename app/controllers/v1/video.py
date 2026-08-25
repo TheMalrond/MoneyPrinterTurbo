@@ -35,9 +35,9 @@ from app.services import state as sm
 from app.services import task as tm
 from app.utils import file_security, utils
 
-# 认证依赖项
-# router = new_router(dependencies=[Depends(base.verify_token)])
-router = new_router()
+# 认证依赖项：verify_token 内部在未配置 api_key 时直接放行（本地/开发场景），
+# 一旦在 config.toml 设置了 api_key（例如云端部署），就会强制校验 x-api-key。
+router = new_router(dependencies=[Depends(base.verify_token)])
 
 _enable_redis = config.app.get("enable_redis", False)
 _redis_host = config.app.get("redis_host", "localhost")

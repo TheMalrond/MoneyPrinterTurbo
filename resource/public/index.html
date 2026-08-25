@@ -1,19 +1,109 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <title>MoneyPrinterTurbo</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Video Factory</title>
+<meta name="description" content="Gere vídeos narrados a partir de um roteiro" />
+<meta name="theme-color" content="#0b0f14" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Video Factory" />
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/icons/icon-192.png" />
+<link rel="icon" href="/icons/icon-192.png" />
+<link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-<h1>MoneyPrinterTurbo</h1>
-<a href="https://github.com/harry0703/MoneyPrinterTurbo">https://github.com/harry0703/MoneyPrinterTurbo</a>
-<p>
-    只需提供一个视频 主题 或 关键词 ，就可以全自动生成视频文案、视频素材、视频字幕、视频背景音乐，然后合成一个高清的短视频。
-</p>
+<header class="topbar">
+  <h1>🎬 Video Factory</h1>
+  <button id="btn-settings" class="icon-btn" aria-label="Configurações" title="Configurações">⚙</button>
+</header>
 
-<p>
-    Simply provide a topic or keyword for a video, and it will automatically generate the video copy, video materials,
-    video subtitles, and video background music before synthesizing a high-definition short video.
-</p>
+<main>
+  <section id="panel-settings" class="card hidden">
+    <h2>Configurações</h2>
+    <p class="hint">Cole aqui a chave de acesso deste app (fornecida por quem administra o servidor). Ela fica salva só neste dispositivo.</p>
+    <label for="input-api-key">Chave de acesso</label>
+    <input id="input-api-key" type="password" autocomplete="off" placeholder="x-api-key" />
+    <div class="actions">
+      <button id="btn-save-key" class="btn-primary">Salvar</button>
+      <button id="btn-close-settings" class="btn-secondary">Fechar</button>
+    </div>
+  </section>
+
+  <form id="form-video" class="card">
+    <label for="input-script">Roteiro</label>
+    <textarea id="input-script" rows="7" required
+      placeholder="Escreva aqui o texto que será narrado no vídeo, em português, como se fosse falado em voz alta."></textarea>
+
+    <label for="input-terms">Temas visuais (em inglês, separados por vírgula)</label>
+    <textarea id="input-terms" rows="2" required
+      placeholder="Ex.: hands counting real cash money, open bible reading closeup, ancient oil lamp candle flame"></textarea>
+    <p class="hint">Esses termos guiam a busca de vídeos de banco (Pexels). Seja específico — termos genéricos podem trazer clipes de desenho/3D em vez de fotografia real.</p>
+
+    <div class="grid-2">
+      <div>
+        <label for="select-voice">Voz</label>
+        <select id="select-voice">
+          <option value="pt-BR-FranciscaNeural-Female" selected>Francisca (padrão, feminina)</option>
+          <option value="pt-BR-AntonioNeural-Male">Antônio (padrão, masculina)</option>
+          <option value="de-DE-FlorianMultilingualNeural-Male">Florian (grave, masculina)</option>
+          <option value="pt-BR-ThalitaMultilingualNeural-Female">Thalita (feminina, alternativa)</option>
+        </select>
+      </div>
+      <div>
+        <label for="select-aspect">Formato</label>
+        <select id="select-aspect">
+          <option value="9:16" selected>9:16 — Reels / Stories</option>
+          <option value="16:9">16:9 — YouTube</option>
+          <option value="1:1">1:1 — Feed</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div>
+        <label for="select-subtitle-position">Posição da legenda</label>
+        <select id="select-subtitle-position">
+          <option value="center" selected>Centro (recomendado p/ Reels/Stories)</option>
+          <option value="bottom">Rodapé</option>
+          <option value="top">Topo</option>
+        </select>
+      </div>
+      <div>
+        <label for="input-subtitle-color">Cor da legenda</label>
+        <input id="input-subtitle-color" type="color" value="#ffff00" />
+      </div>
+    </div>
+
+    <label class="checkbox-row">
+      <input id="input-bgm" type="checkbox" checked />
+      Trilha sonora de fundo (volume baixo)
+    </label>
+
+    <button type="submit" id="btn-submit" class="btn-primary btn-block">Gerar vídeo</button>
+  </form>
+
+  <section id="panel-status" class="card hidden">
+    <div id="status-working">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="status-text">Enviando pedido...</p>
+    </div>
+    <div id="status-error" class="hidden">
+      <p id="error-text" class="error-text"></p>
+      <button id="btn-retry" class="btn-secondary">Tentar de novo</button>
+    </div>
+    <div id="status-done" class="hidden">
+      <video id="video-result" controls playsinline></video>
+      <div class="actions">
+        <a id="link-download" class="btn-primary" download>Baixar vídeo</a>
+        <button id="btn-new" class="btn-secondary">Gerar outro</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
 </body>
 </html>

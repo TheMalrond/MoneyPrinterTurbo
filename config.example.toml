@@ -294,7 +294,12 @@ redis_db = 0
 redis_password = ""
 
 # Maximum number of concurrent and queued API video-generation tasks.
-max_concurrent_tasks = 5
+# 1 is the safe default for small instances (e.g. Render free tier, 512MB RAM):
+# each MoviePy/FFmpeg render is memory-heavy, and running several at once is a
+# common cause of an OOM kill (container exits with status 137). Raise this
+# only on an instance with real memory headroom, or override with the
+# MAX_CONCURRENT_TASKS env var without editing this file.
+max_concurrent_tasks = 1
 max_queued_tasks = 100
 
 # -----------------------------------------------------------------------------

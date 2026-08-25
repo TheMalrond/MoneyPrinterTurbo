@@ -588,6 +588,8 @@ app["redis_host"] = os.getenv(
 if os.getenv("PEXELS_API_KEY"):
     app["pexels_api_keys"] = [os.getenv("PEXELS_API_KEY")]
 app["api_key"] = os.getenv("API_KEY", app.get("api_key", ""))
+if os.getenv("MAX_CONCURRENT_TASKS"):
+    app["max_concurrent_tasks"] = int(os.getenv("MAX_CONCURRENT_TASKS"))
 
 ffmpeg_path = app.get("ffmpeg_path", "")
 if ffmpeg_path and os.path.isfile(ffmpeg_path):

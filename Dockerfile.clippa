@@ -1,0 +1,43 @@
+# Dockerfile.clippa — runs the FastAPI/PWA app (Clippa), not the Streamlit WebUI.
+# The original Dockerfile's default CMD starts Streamlit; this one exists so
+# managed platforms that build straight from a Dockerfile (Cloud Run, Render's
+# Blueprint-less "New Web Service" flow) get the right entrypoint without any
+# extra "docker command" override step.
+
+FROM python:3.11-slim-bullseye
+
+WORKDIR /MoneyPrinterTurbo
+RUN chmod 777 /MoneyPrinterTurbo
+
+ENV PYTHONPATH="/MoneyPrinterTurbo"
+ENV PYTHONIOENCODING="utf-8"
+
+ARG DOCKER_BUILD_MIRROR=default
+ARG PIP_USE_OFFICIAL=1
+
+RUN if [ "$DOCKER_BUILD_MIRROR" = "china" ]; then \
+        echo "deb http://mirrors.aliyun.com/debian bullseye main" > /etc/apt/sources.list && \
+        echo "deb http://mirrors.aliyun.com/debian-security bullseye-security main" >> /etc/apt/sources.list; \
+    else \
+        echo "Using default Debian mirrors"; \
+    fi && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+
+RUN if [ "$PIP_USE_OFFICIAL" = "1" ]; then \
+        pip install --no-cache-dir --retries 3 --timeout 60 -r requirements.txt; \
+    else \
+        pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com --retries 3 --timeout 60 -r requirements.txt; \
+    fi
+
+COPY . .
+
+# Cloud Run (and Render) inject the real port via the PORT env var; app/config
+# reads it at startup. EXPOSE here is documentation only.
+EXPOSE 8080
+
+CMD ["python", "main.py"]

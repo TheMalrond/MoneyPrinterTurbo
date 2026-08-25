@@ -581,6 +581,14 @@ app["redis_host"] = os.getenv(
     os.getenv("REDIS_HOST", app.get("redis_host", "localhost")),
 )
 
+# Deploys gerenciados (Render, Cloud Run etc.) costumam expor só "Environment
+# Variables" na tela de criação do serviço, sem um jeito simples de montar um
+# config.toml completo antes do primeiro deploy. Estas duas env vars cobrem os
+# únicos segredos realmente necessários para rodar o Clippa na nuvem.
+if os.getenv("PEXELS_API_KEY"):
+    app["pexels_api_keys"] = [os.getenv("PEXELS_API_KEY")]
+app["api_key"] = os.getenv("API_KEY", app.get("api_key", ""))
+
 ffmpeg_path = app.get("ffmpeg_path", "")
 if ffmpeg_path and os.path.isfile(ffmpeg_path):
     os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path

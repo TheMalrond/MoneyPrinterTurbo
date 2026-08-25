@@ -23,6 +23,7 @@ from app.services import (
     sonilo,
     subtitle,
     task_artifacts,
+    translate,
     twelvelabs,
     video,
     voice,
@@ -319,6 +320,12 @@ def generate_terms(task_id, params, video_script):
             video_terms = [term.strip() for term in video_terms]
         else:
             raise ValueError("video_terms must be a string or a list of strings.")
+
+        # Busca de banco (Pexels/Pixabay) funciona muito melhor em inglês.
+        # Material local não faz busca nenhuma, então pular a tradução aí
+        # evita uma chamada de rede sem propósito.
+        if params.video_source != "local":
+            video_terms = translate.translate_terms_to_english(video_terms)
 
         logger.debug(f"video terms: {utils.to_json(video_terms)}")
 

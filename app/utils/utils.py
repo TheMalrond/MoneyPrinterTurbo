@@ -244,6 +244,15 @@ def split_string_by_punctuations(s):
             txt += char
             continue
 
+        if char == "." and previous_char.isalpha() and next_char.isalpha():
+            # Domínio/URL sem espaço ao redor do ponto, ex.: "ybera.com".
+            # Edge TTS trata isso como um único token contínuo (sem boundary
+            # no ponto); se aqui quebrarmos em "ybera" e "com", a legenda
+            # nunca consegue casar os dois fragmentos de volta com o cue
+            # único do TTS, e create_subtitle() aborta a legenda inteira.
+            txt += char
+            continue
+
         if char == "," and previous_char.isdigit() and next_char.isdigit():
             # 英文数字里的千分位逗号不是断句符，例如 "1,000 years"。
             # Edge TTS 的 word boundary 通常会把这种数字整体作为连续内容返回；

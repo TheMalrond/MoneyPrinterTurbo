@@ -306,6 +306,15 @@ def delete_video(request: Request, task_id: str = Path(..., description="Task ID
         if os.path.exists(current_task_dir):
             shutil.rmtree(current_task_dir)
 
+        # Materiais baixados do banco Ybera (app/services/ybera_bank.py) ficam
+        # fora de storage/tasks/, numa jail própria — a limpeza acima não os
+        # alcança, então removemos explicitamente aqui.
+        ybera_bank_dir = os.path.join(
+            utils.storage_dir("local_videos"), "ybera_bank", task_id
+        )
+        if os.path.exists(ybera_bank_dir):
+            shutil.rmtree(ybera_bank_dir)
+
         sm.state.delete_task(task_id)
         logger.success(f"video deleted: {utils.to_json(task)}")
         return utils.get_response(200)

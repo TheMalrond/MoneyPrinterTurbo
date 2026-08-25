@@ -468,6 +468,74 @@ class TestTaskService(unittest.TestCase):
         backend.wait_for_run.assert_called_once_with("paid-run-1")
         backend.download_video_results.assert_called_once()
 
+    def test_ybera_bank_match_reuses_local_preprocess_pipeline(self):
+        """Produto encontrado no banco Ybera deve virar clipe via o mesmo
+        video.preprocess_video() que o video_source=local usa, sem cair pro
+        Pexels."""
+        params = VideoParams(
+            video_subject="Progressiva Fashion Gold",
+            video_source="ybera_bank",
+            video_clip_duration=5,
+            video_count=1,
+        )
+        processed_materials = [
+            MaterialInfo(url="/abs/path/img1.jpg.mp4", provider="ybera_bank"),
+        ]
+
+        with (
+            patch.object(
+                tm.ybera_bank,
+                "get_materials",
+                return_value=["ybera_bank/task-x/img1.jpg"],
+            ) as get_materials,
+            patch.object(
+                tm.video, "preprocess_video", return_value=processed_materials
+            ) as preprocess_video,
+            patch.object(tm.material, "download_videos") as download_videos,
+        ):
+            result = tm.get_video_materials(
+                "task-x",
+                params,
+                ["fashion gold"],
+                10,
+                video_script="Compre a progressiva Fashion Gold hoje na Ybera.",
+            )
+
+        self.assertEqual(result, ["/abs/path/img1.jpg.mp4"])
+        get_materials.assert_called_once()
+        preprocess_video.assert_called_once()
+        download_videos.assert_not_called()
+
+    def test_ybera_bank_no_match_falls_back_to_pexels(self):
+        """Sem produto correspondente, o banco Ybera deve cair pro Pexels
+        automaticamente, sem travar a geração do vídeo."""
+        params = VideoParams(
+            video_subject="Assunto qualquer",
+            video_source="ybera_bank",
+            video_aspect="9:16",
+            video_concat_mode="random",
+            video_clip_duration=5,
+            video_count=1,
+            match_materials_to_script=False,
+        )
+
+        with (
+            patch.object(tm.ybera_bank, "get_materials", return_value=None),
+            patch.object(
+                tm.material, "download_videos", return_value=["/abs/pexels1.mp4"]
+            ) as download_videos,
+        ):
+            result = tm.get_video_materials(
+                "task-y",
+                params,
+                ["algum tema"],
+                10,
+                video_script="Um roteiro qualquer sem produto Ybera.",
+            )
+
+        self.assertEqual(result, ["/abs/pexels1.mp4"])
+        self.assertEqual(download_videos.call_args.kwargs["source"], "pexels")
+
     def test_mark_task_failed_preserves_a_specific_service_failure(self):
         """服务层已记录具体错误时，编排层不能再用通用错误覆盖它。"""
         state = MemoryState()

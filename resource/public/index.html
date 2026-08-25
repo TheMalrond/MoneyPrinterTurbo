@@ -43,10 +43,16 @@
     <textarea id="input-script" rows="7" required
       placeholder="Escreva aqui o texto que será narrado no vídeo, em português, como se fosse falado em voz alta."></textarea>
 
+    <label for="select-video-source">Fonte das imagens</label>
+    <select id="select-video-source">
+      <option value="pexels" selected>Banco de imagens (Pexels)</option>
+      <option value="ybera_bank">Produtos Ybera</option>
+    </select>
+
     <label for="input-terms">Temas visuais (separados por vírgula)</label>
     <textarea id="input-terms" rows="2" required
       placeholder="Ex.: mãos contando dinheiro real, livro aberto sendo lido de perto, lâmpada a óleo antiga acesa"></textarea>
-    <p class="hint">Esses termos guiam a busca de vídeos de banco (Pexels). Pode escrever em português — o Clippa traduz automaticamente. Seja específico: termos genéricos podem trazer clipes de desenho/3D em vez de fotografia real.</p>
+    <p class="hint">Esses termos guiam a busca de vídeos de banco (Pexels). Pode escrever em português — o Clippa traduz automaticamente. Seja específico: termos genéricos podem trazer clipes de desenho/3D em vez de fotografia real. Em "Produtos Ybera", citar o nome do produto/linha no roteiro (ex.: Fashion Gold, Spa Pet) ajuda a achar as fotos certas — sem match, o Clippa usa o banco genérico automaticamente.</p>
 
     <div class="grid-2">
       <div>

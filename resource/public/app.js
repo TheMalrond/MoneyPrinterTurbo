@@ -127,7 +127,7 @@
       video_subject: subject,
       video_script: script,
       video_terms: terms,
-      video_source: "pexels",
+      video_source: el("select-video-source").value,
       video_aspect: el("select-aspect").value,
       video_concat_mode: "random",
       video_clip_duration: 5,

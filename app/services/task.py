@@ -13,7 +13,7 @@ from loguru import logger
 
 from app.config import config
 from app.models import const
-from app.models.schema import VideoConcatMode, VideoParams
+from app.models.schema import MaterialInfo, VideoConcatMode, VideoParams
 from app.services import bgm as bgm_service
 from app.services import (
     elevenlabs_music,
@@ -27,6 +27,7 @@ from app.services import (
     twelvelabs,
     video,
     voice,
+    ybera_bank,
 )
 from app.services import upload_post
 from app.services import state as sm
@@ -323,8 +324,10 @@ def generate_terms(task_id, params, video_script):
 
         # Busca de banco (Pexels/Pixabay) funciona muito melhor em inglês.
         # Material local não faz busca nenhuma, então pular a tradução aí
-        # evita uma chamada de rede sem propósito.
-        if params.video_source != "local":
+        # evita uma chamada de rede sem propósito. O banco Ybera também pula:
+        # os nomes das pastas de produto são em português (ex.: "Fashion Gold"),
+        # e traduzir os termos pra inglês só atrapalharia o match.
+        if params.video_source not in ("local", "ybera_bank"):
             video_terms = translate.translate_terms_to_english(video_terms)
 
         logger.debug(f"video terms: {utils.to_json(video_terms)}")
@@ -585,12 +588,39 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
     return subtitle_path
 
 
+def _download_pexels_materials(task_id, params, video_terms, audio_duration, source=None):
+    """Baixa material de banco de vídeo (Pexels/Pixabay/etc) encaminhando todos
+    os parâmetros relevantes. Extraído pra ser reaproveitado tanto pelo fluxo
+    normal (source=None usa params.video_source) quanto pelo fallback do banco
+    Ybera quando não acha produto correspondente (source="pexels" explícito,
+    já que ali params.video_source ainda é "ybera_bank")."""
+    source = source or params.video_source
+    logger.info(f"\n\n## downloading videos from {source}")
+    # 顺序匹配模式只在用户显式开启时生效。这里强制素材下载按关键词顺序
+    # 轮询，避免某个早期关键词下载太多素材，把后续脚本主题挤出最终时间线。
+    return material.download_videos(
+        task_id=task_id,
+        search_terms=video_terms,
+        source=source,
+        video_aspect=params.video_aspect,
+        video_concat_mode=(
+            VideoConcatMode.sequential
+            if params.match_materials_to_script
+            else params.video_concat_mode
+        ),
+        audio_duration=audio_duration * params.video_count,
+        max_clip_duration=params.video_clip_duration,
+        match_script_order=params.match_materials_to_script,
+    )
+
+
 def get_video_materials(
     task_id,
     params,
     video_terms,
     audio_duration,
     loomloom_video_request: loomloom.LoomLoomConfirmedVideoRequest | None = None,
+    video_script: str = "",
 ):
     if params.video_source == "local":
         logger.info("\n\n## preprocess local materials")
@@ -666,23 +696,50 @@ def get_video_materials(
                 },
             )
             return None
-    else:
-        logger.info(f"\n\n## downloading videos from {params.video_source}")
-        # 顺序匹配模式只在用户显式开启时生效。这里强制素材下载按关键词顺序
-        # 轮询，避免某个早期关键词下载太多素材，把后续脚本主题挤出最终时间线。
-        downloaded_videos = material.download_videos(
-            task_id=task_id,
-            search_terms=video_terms,
-            source=params.video_source,
-            video_aspect=params.video_aspect,
-            video_concat_mode=(
-                VideoConcatMode.sequential
-                if params.match_materials_to_script
-                else params.video_concat_mode
+    elif params.video_source == "ybera_bank":
+        logger.info("\n\n## searching Ybera product bank")
+        search_text = f"{video_script} {' '.join(video_terms or [])}"
+        needed_count = min(
+            15,
+            max(
+                1,
+                math.ceil(
+                    (audio_duration * params.video_count)
+                    / max(params.video_clip_duration, 1)
+                ),
             ),
-            audio_duration=audio_duration * params.video_count,
-            max_clip_duration=params.video_clip_duration,
-            match_script_order=params.match_materials_to_script,
+        )
+        local_paths = ybera_bank.get_materials(task_id, search_text, needed_count)
+        if local_paths:
+            materials = [
+                MaterialInfo(url=p, provider="ybera_bank") for p in local_paths
+            ]
+            processed = video.preprocess_video(
+                materials=materials, clip_duration=params.video_clip_duration
+            )
+            if processed:
+                return [material_info.url for material_info in processed]
+            logger.warning(
+                "ybera_bank: matched materials failed preprocessing, "
+                "falling back to Pexels"
+            )
+        else:
+            logger.warning("ybera_bank: no product match, falling back to Pexels")
+
+        downloaded_videos = _download_pexels_materials(
+            task_id, params, video_terms, audio_duration, source="pexels"
+        )
+        if not downloaded_videos:
+            _mark_task_failed(
+                task_id,
+                "materials",
+                "failed to download fallback video materials from pexels",
+            )
+            return None
+        return downloaded_videos
+    else:
+        downloaded_videos = _download_pexels_materials(
+            task_id, params, video_terms, audio_duration
         )
         if not downloaded_videos:
             _mark_task_failed(
@@ -1306,6 +1363,7 @@ def _run_pipeline(
         video_terms,
         audio_duration,
         loomloom_video_request=loomloom_video_request,
+        video_script=video_script,
     )
     if not downloaded_videos:
         return _mark_task_failed(

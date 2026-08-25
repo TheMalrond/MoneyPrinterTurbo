@@ -5,8 +5,9 @@
   --border: #232d38;
   --text: #e7edf3;
   --muted: #93a2b3;
-  --accent: #facc15;
-  --accent-text: #1a1400;
+  --brand: #7c5cff;
+  --accent: #ff6b4a;
+  --accent-text: #2b0f08;
   --danger: #f87171;
 }
 
@@ -35,9 +36,21 @@ body {
   z-index: 10;
 }
 
-.topbar h1 {
-  font-size: 1.15rem;
-  margin: 0;
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-mark {
+  flex-shrink: 0;
+}
+
+.brand-name {
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 
 .icon-btn {
@@ -188,6 +201,15 @@ input[type="color"] {
 
 .error-text {
   color: var(--danger);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 video#video-result {

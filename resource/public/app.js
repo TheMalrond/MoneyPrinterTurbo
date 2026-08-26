@@ -19,6 +19,9 @@
   const form = el("form-video");
   const btnSubmit = el("btn-submit");
 
+  const selectBgmMood = el("select-bgm-mood");
+  const bgmTrackPicker = el("bgm-track-picker");
+
   const statusPanel = el("panel-status");
   const statusWorking = el("status-working");
   const statusText = el("status-text");
@@ -118,6 +121,139 @@
     return body;
   }
 
+  async function apiFetchBlob(path) {
+    const response = await fetch(path, { headers: { "x-api-key": getApiKey() } });
+    if (!response.ok) {
+      throw new Error(`Erro ${response.status} ao buscar a prévia da música.`);
+    }
+    return response.blob();
+  }
+
+  // --- Trilha sonora por humor ---
+
+  let bgmMoodsCache = null;
+  let bgmSelectedFile = "";
+  const previewAudio = new Audio();
+  const previewObjectUrls = new Map();
+  let activePreviewButton = null;
+
+  function friendlyTrackName(filename) {
+    let name = filename.replace(/\.[^.]+$/, "");
+    name = name.replace(/^mixkit-/, "").replace(/-\d+$/, "");
+    name = name.replace(/-/g, " ").trim();
+    return name.replace(/\b\w/g, (c) => c.toUpperCase()) || filename;
+  }
+
+  async function loadBgmMoods() {
+    if (bgmMoodsCache) return bgmMoodsCache;
+    const body = await apiFetch("/api/v1/musics/moods");
+    bgmMoodsCache = (body && body.data && body.data.moods) || {};
+    return bgmMoodsCache;
+  }
+
+  function stopPreview() {
+    previewAudio.pause();
+    if (activePreviewButton) {
+      activePreviewButton.textContent = "▶";
+      activePreviewButton = null;
+    }
+  }
+
+  async function togglePreview(file, button) {
+    if (activePreviewButton === button) {
+      stopPreview();
+      return;
+    }
+    stopPreview();
+    button.textContent = "…";
+    try {
+      let objectUrl = previewObjectUrls.get(file);
+      if (!objectUrl) {
+        const blob = await apiFetchBlob(`/api/v1/musics/preview/${file}`);
+        objectUrl = URL.createObjectURL(blob);
+        previewObjectUrls.set(file, objectUrl);
+      }
+      previewAudio.src = objectUrl;
+      previewAudio.currentTime = 0;
+      previewAudio.onloadedmetadata = () => {
+        if (previewAudio.duration && isFinite(previewAudio.duration)) {
+          previewAudio.currentTime = previewAudio.duration * 0.4;
+        }
+      };
+      await previewAudio.play();
+      button.textContent = "⏸";
+      activePreviewButton = button;
+    } catch (err) {
+      button.textContent = "▶";
+    }
+  }
+
+  previewAudio.addEventListener("ended", stopPreview);
+
+  async function renderBgmTrackPicker(mood) {
+    stopPreview();
+    if (!mood) {
+      bgmTrackPicker.classList.add("hidden");
+      bgmTrackPicker.innerHTML = "";
+      bgmSelectedFile = "";
+      return;
+    }
+
+    bgmTrackPicker.innerHTML = '<p class="hint">Carregando faixas...</p>';
+    bgmTrackPicker.classList.remove("hidden");
+
+    let moods;
+    try {
+      moods = await loadBgmMoods();
+    } catch (err) {
+      bgmTrackPicker.innerHTML = '<p class="hint">Não foi possível carregar as faixas agora.</p>';
+      return;
+    }
+
+    const tracks = moods[mood] || [];
+    if (!tracks.length) {
+      bgmTrackPicker.innerHTML = '<p class="hint">Nenhuma faixa cadastrada nesse humor ainda.</p>';
+      bgmSelectedFile = "";
+      return;
+    }
+
+    bgmTrackPicker.innerHTML = "";
+    bgmSelectedFile = tracks[0].file;
+
+    tracks.forEach((track, index) => {
+      const row = document.createElement("label");
+      row.className = "track-row";
+
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "bgm-track-choice";
+      radio.value = track.file;
+      radio.checked = index === 0;
+      radio.addEventListener("change", () => {
+        bgmSelectedFile = track.file;
+      });
+
+      const name = document.createElement("span");
+      name.className = "track-name";
+      name.textContent = friendlyTrackName(track.name);
+
+      const previewBtn = document.createElement("button");
+      previewBtn.type = "button";
+      previewBtn.className = "track-preview-btn";
+      previewBtn.textContent = "▶";
+      previewBtn.addEventListener("click", () => togglePreview(track.file, previewBtn));
+
+      row.appendChild(radio);
+      row.appendChild(name);
+      row.appendChild(previewBtn);
+      bgmTrackPicker.appendChild(row);
+    });
+  }
+
+  selectBgmMood.addEventListener("change", () => {
+    renderBgmTrackPicker(selectBgmMood.value);
+  });
+
   function selectedVideoSources() {
     const sources = [];
     if (el("check-source-ybera").checked) sources.push("ybera_bank");
@@ -141,7 +277,8 @@
       video_count: 1,
       voice_name: el("select-voice").value,
       voice_rate: 1.0,
-      bgm_type: el("input-bgm").checked ? "random" : "none",
+      bgm_type: bgmSelectedFile ? "custom" : "none",
+      bgm_file: bgmSelectedFile,
       bgm_volume: 0.15,
       subtitle_enabled: true,
       subtitle_position: el("select-subtitle-position").value,

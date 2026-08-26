@@ -96,10 +96,17 @@
       </div>
     </div>
 
-    <label class="checkbox-row">
-      <input id="input-bgm" type="checkbox" checked />
-      Trilha sonora de fundo (volume baixo)
-    </label>
+    <label for="select-bgm-mood">Trilha sonora de fundo</label>
+    <select id="select-bgm-mood">
+      <option value="" selected>Sem trilha</option>
+      <option value="emocionante">Emocionante</option>
+      <option value="calma">Calma</option>
+      <option value="alegre">Alegre</option>
+      <option value="energetica">Energética</option>
+      <option value="corporativa">Corporativa</option>
+      <option value="dramatica">Dramática</option>
+    </select>
+    <div id="bgm-track-picker" class="track-picker hidden"></div>
 
     <button type="submit" id="btn-submit" class="btn-primary btn-block">Gerar vídeo</button>
   </form>

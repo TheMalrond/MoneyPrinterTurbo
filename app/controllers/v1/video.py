@@ -387,6 +387,29 @@ def upload_bgm_file(request: Request, file: UploadFile = File(...)):
     response = {"file": safe_filename}
     return utils.get_response(200, response)
 
+
+@router.get("/musics/moods", summary="List local BGM files grouped by mood")
+def get_bgm_moods(request: Request):
+    moods = {
+        mood: bgm_service.list_mood_bgm_files(mood) for mood in bgm_service.BGM_MOODS
+    }
+    return utils.get_response(200, {"moods": moods})
+
+
+@router.get("/musics/preview/{file_path:path}", summary="Stream a mood BGM file for preview")
+def stream_bgm_preview(request: Request, file_path: str):
+    request_id = base.get_task_id(request)
+    try:
+        resolved_path = bgm_service.resolve_bgm_file(f"moods/{file_path}")
+    except ValueError:
+        raise HttpException(
+            task_id=request_id,
+            status_code=404,
+            message=f"{request_id}: background music preview not found",
+        )
+    return FileResponse(path=resolved_path, media_type="audio/mpeg")
+
+
 @router.get(
     "/video_materials", response_model=VideoMaterialRetrieveResponse, summary="Retrieve local video materials"
 )

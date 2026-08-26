@@ -346,6 +346,83 @@ class TestBackgroundMusicService(unittest.TestCase):
                 same_file, os.path.realpath(os.path.join(uploaded_dir, "same.mp3"))
             )
 
+    def test_list_mood_bgm_files_filters_and_sorts(self):
+        with tempfile.TemporaryDirectory() as mood_dir:
+            Path(mood_dir, "b-track.mp3").write_bytes(b"b")
+            Path(mood_dir, "a-track.mp3").write_bytes(b"a")
+            Path(mood_dir, "not-audio.txt").write_bytes(b"nope")
+
+            with patch.object(bgm.utils, "song_dir", return_value=mood_dir):
+                result = bgm.list_mood_bgm_files("calma")
+
+            self.assertEqual(
+                result,
+                [
+                    {"name": "a-track.mp3", "file": "moods/calma/a-track.mp3"},
+                    {"name": "b-track.mp3", "file": "moods/calma/b-track.mp3"},
+                ],
+            )
+
+    def test_list_mood_bgm_files_rejects_unknown_mood(self):
+        # Impede injeção de path via um "mood" que não está na lista permitida
+        # (ex.: "../../etc") — só os humores cadastrados são válidos.
+        self.assertEqual(bgm.list_mood_bgm_files("../../etc"), [])
+
+    def test_list_mood_bgm_files_missing_directory_returns_empty(self):
+        with tempfile.TemporaryDirectory() as base_dir:
+            missing_dir = os.path.join(base_dir, "does-not-exist")
+            with patch.object(bgm.utils, "song_dir", return_value=missing_dir):
+                self.assertEqual(bgm.list_mood_bgm_files("alegre"), [])
+
+    def test_get_bgm_moods_endpoint_groups_by_mood(self):
+        request = _FakeRequest()
+        canned = {"emocionante": [{"name": "x.mp3", "file": "moods/emocionante/x.mp3"}]}
+        with patch.object(
+            video_controller.bgm_service,
+            "list_mood_bgm_files",
+            side_effect=lambda mood: canned.get(mood, []),
+        ):
+            response = video_controller.get_bgm_moods(request)
+
+        self.assertEqual(response["status"], 200)
+        self.assertEqual(
+            response["data"]["moods"]["emocionante"],
+            [{"name": "x.mp3", "file": "moods/emocionante/x.mp3"}],
+        )
+        self.assertEqual(response["data"]["moods"]["calma"], [])
+        self.assertEqual(set(response["data"]["moods"].keys()), set(bgm.BGM_MOODS))
+
+    def test_stream_bgm_preview_serves_resolved_file(self):
+        request = _FakeRequest()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            track_path = Path(tmp_dir, "track.mp3")
+            track_path.write_bytes(b"fake audio bytes")
+
+            with patch.object(
+                video_controller.bgm_service,
+                "resolve_bgm_file",
+                return_value=str(track_path),
+            ) as resolve:
+                response = video_controller.stream_bgm_preview(
+                    request, "alegre/track.mp3"
+                )
+
+            resolve.assert_called_once_with("moods/alegre/track.mp3")
+            self.assertEqual(response.path, str(track_path))
+            self.assertEqual(response.media_type, "audio/mpeg")
+
+    def test_stream_bgm_preview_404s_on_invalid_path(self):
+        request = _FakeRequest()
+        with patch.object(
+            video_controller.bgm_service,
+            "resolve_bgm_file",
+            side_effect=ValueError("outside allowed directory"),
+        ):
+            with self.assertRaises(HttpException) as context:
+                video_controller.stream_bgm_preview(request, "../../etc/passwd")
+
+        self.assertEqual(context.exception.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

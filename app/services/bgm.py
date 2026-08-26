@@ -271,6 +271,51 @@ def save_bgm_upload(filename: str, source: BinaryIO) -> str:
         _remove_staged_file(temp_path)
 
 
+# Faixas royalty-free (Mixkit License, uso comercial sem exigir crédito)
+# curadas por humor em resource/songs/moods/<humor>/, uma subpasta por humor.
+BGM_MOODS = (
+    "emocionante",
+    "calma",
+    "alegre",
+    "energetica",
+    "corporativa",
+    "dramatica",
+)
+
+
+def list_mood_bgm_files(mood: str) -> list[dict]:
+    """
+    Lista as faixas de um humor específico (resource/songs/moods/<mood>/),
+    reaproveitando a mesma validação de segurança de list_bgm_files().
+
+    Retorna dicts com `name` (nome de exibição) e `file` (caminho relativo
+    pronto para usar como `bgm_file` na API, ex.: "moods/alegre/faixa.mp3").
+    """
+    if mood not in BGM_MOODS:
+        return []
+
+    directory = utils.song_dir(f"moods/{mood}")
+    if not os.path.isdir(directory):
+        return []
+
+    files = []
+    for name in sorted(os.listdir(directory), key=str.lower):
+        if Path(name).suffix.lower() not in SUPPORTED_BGM_EXTENSIONS:
+            continue
+        try:
+            file_security.resolve_path_within_directory(
+                directory, os.path.join(directory, name)
+            )
+        except ValueError as exc:
+            logger.warning(
+                f"skip unsafe mood background music file: mood={mood}, "
+                f"name={name}, error={str(exc)}"
+            )
+            continue
+        files.append({"name": name, "file": f"moods/{mood}/{name}"})
+    return files
+
+
 def list_bgm_files() -> list[str]:
     """列出用户上传和内置的可用背景音乐。"""
     files_by_name: dict[str, str] = {}

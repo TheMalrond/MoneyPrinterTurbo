@@ -408,7 +408,12 @@ def get_bgm_moods(request: Request):
 def stream_bgm_preview(request: Request, file_path: str):
     request_id = base.get_task_id(request)
     try:
-        resolved_path = bgm_service.resolve_bgm_file(f"moods/{file_path}")
+        # file_path já vem com o prefixo "moods/<humor>/..." — é o mesmo valor
+        # de `file` devolvido por list_mood_bgm_files()/GET /musics/moods, que
+        # o PWA usa sem alterar tanto pra montar essa URL quanto pra mandar
+        # como bgm_file na criação do vídeo. Prefixar de novo aqui duplicava
+        # "moods/moods/..." e a prévia nunca resolvia (bug real, 26/08/2026).
+        resolved_path = bgm_service.resolve_bgm_file(file_path)
     except ValueError:
         raise HttpException(
             task_id=request_id,

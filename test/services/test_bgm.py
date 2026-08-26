@@ -393,6 +393,9 @@ class TestBackgroundMusicService(unittest.TestCase):
         self.assertEqual(set(response["data"]["moods"].keys()), set(bgm.BGM_MOODS))
 
     def test_stream_bgm_preview_serves_resolved_file(self):
+        # file_path chega pela URL já com o prefixo "moods/<humor>/..." (é o
+        # mesmo valor de `file` que GET /musics/moods devolve, sem alteração)
+        # — não deve ser prefixado de novo, senão vira "moods/moods/...".
         request = _FakeRequest()
         with tempfile.TemporaryDirectory() as tmp_dir:
             track_path = Path(tmp_dir, "track.mp3")
@@ -404,12 +407,39 @@ class TestBackgroundMusicService(unittest.TestCase):
                 return_value=str(track_path),
             ) as resolve:
                 response = video_controller.stream_bgm_preview(
-                    request, "alegre/track.mp3"
+                    request, "moods/alegre/track.mp3"
                 )
 
             resolve.assert_called_once_with("moods/alegre/track.mp3")
             self.assertEqual(response.path, str(track_path))
             self.assertEqual(response.media_type, "audio/mpeg")
+
+    def test_bgm_moods_file_value_resolves_directly_in_preview(self):
+        # Teste de integração entre os dois endpoints: o `file` que
+        # list_mood_bgm_files() devolve (usado tanto pra montar a URL de
+        # prévia quanto como bgm_file na criação do vídeo) tem que resolver
+        # sem transformação nenhuma em cima — é a regressão real que
+        # aconteceu (26/08/2026): o preview prefixava "moods/" de novo.
+        with tempfile.TemporaryDirectory() as songs_root:
+            mood_dir = os.path.join(songs_root, "moods", "alegre")
+            os.makedirs(mood_dir)
+            Path(mood_dir, "track.mp3").write_bytes(b"fake audio")
+
+            def fake_song_dir(sub_dir=""):
+                return os.path.join(songs_root, sub_dir) if sub_dir else songs_root
+
+            with patch.object(bgm.utils, "song_dir", side_effect=fake_song_dir):
+                tracks = bgm.list_mood_bgm_files("alegre")
+                self.assertEqual(len(tracks), 1)
+                file_value = tracks[0]["file"]
+                self.assertEqual(file_value, "moods/alegre/track.mp3")
+
+                resolved = bgm.resolve_bgm_file(file_value)
+
+            self.assertEqual(
+                os.path.realpath(resolved),
+                os.path.realpath(os.path.join(mood_dir, "track.mp3")),
+            )
 
     def test_stream_bgm_preview_404s_on_invalid_path(self):
         request = _FakeRequest()

@@ -17,4 +17,5 @@ root_api_router.include_router(ping.router)
 
 # v1
 root_api_router.include_router(video.router)
+root_api_router.include_router(video.public_router)
 root_api_router.include_router(llm.router)

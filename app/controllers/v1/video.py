@@ -39,6 +39,14 @@ from app.utils import file_security, utils
 # 一旦在 config.toml 设置了 api_key（例如云端部署），就会强制校验 x-api-key。
 router = new_router(dependencies=[Depends(base.verify_token)])
 
+# Sem exigência de x-api-key: só serve as faixas de trilha sonora royalty-free
+# empacotadas com o app (conteúdo público, sem dado de usuário nenhum). Precisa
+# ficar fora do router autenticado porque <audio src="..."> não consegue
+# enviar cabeçalhos customizados — se exigisse x-api-key, a prévia só tocaria
+# via fetch+Blob, o que atrasa o play() além da janela de gesto do usuário e
+# faz o navegador bloquear a reprodução (autoplay policy).
+public_router = new_router()
+
 _enable_redis = config.app.get("enable_redis", False)
 _redis_host = config.app.get("redis_host", "localhost")
 _redis_port = config.app.get("redis_port", 6379)
@@ -388,7 +396,7 @@ def upload_bgm_file(request: Request, file: UploadFile = File(...)):
     return utils.get_response(200, response)
 
 
-@router.get("/musics/moods", summary="List local BGM files grouped by mood")
+@public_router.get("/musics/moods", summary="List local BGM files grouped by mood")
 def get_bgm_moods(request: Request):
     moods = {
         mood: bgm_service.list_mood_bgm_files(mood) for mood in bgm_service.BGM_MOODS
@@ -396,7 +404,7 @@ def get_bgm_moods(request: Request):
     return utils.get_response(200, {"moods": moods})
 
 
-@router.get("/musics/preview/{file_path:path}", summary="Stream a mood BGM file for preview")
+@public_router.get("/musics/preview/{file_path:path}", summary="Stream a mood BGM file for preview")
 def stream_bgm_preview(request: Request, file_path: str):
     request_id = base.get_task_id(request)
     try:

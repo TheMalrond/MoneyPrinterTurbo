@@ -121,20 +121,17 @@
     return body;
   }
 
-  async function apiFetchBlob(path) {
-    const response = await fetch(path, { headers: { "x-api-key": getApiKey() } });
-    if (!response.ok) {
-      throw new Error(`Erro ${response.status} ao buscar a prévia da música.`);
-    }
-    return response.blob();
-  }
-
   // --- Trilha sonora por humor ---
+  // As faixas de prévia são servidas sem exigir x-api-key (ver public_router
+  // no backend) de propósito: <audio src> não consegue mandar cabeçalho
+  // customizado, e buscar o áudio via fetch+Blob antes de tocar atrasa o
+  // play() além da janela de gesto do usuário — o navegador bloqueia a
+  // reprodução (autoplay policy). Tocar direto via src evita os dois problemas
+  // e ainda aproveita o Range request nativo do navegador (começa mais rápido).
 
   let bgmMoodsCache = null;
   let bgmSelectedFile = "";
   const previewAudio = new Audio();
-  const previewObjectUrls = new Map();
   let activePreviewButton = null;
 
   function friendlyTrackName(filename) {
@@ -159,36 +156,30 @@
     }
   }
 
-  async function togglePreview(file, button) {
+  previewAudio.addEventListener("ended", stopPreview);
+  previewAudio.addEventListener("loadedmetadata", () => {
+    if (previewAudio.duration && isFinite(previewAudio.duration)) {
+      previewAudio.currentTime = previewAudio.duration * 0.4;
+    }
+  });
+
+  function togglePreview(file, button) {
     if (activePreviewButton === button) {
       stopPreview();
       return;
     }
     stopPreview();
-    button.textContent = "…";
-    try {
-      let objectUrl = previewObjectUrls.get(file);
-      if (!objectUrl) {
-        const blob = await apiFetchBlob(`/api/v1/musics/preview/${file}`);
-        objectUrl = URL.createObjectURL(blob);
-        previewObjectUrls.set(file, objectUrl);
-      }
-      previewAudio.src = objectUrl;
-      previewAudio.currentTime = 0;
-      previewAudio.onloadedmetadata = () => {
-        if (previewAudio.duration && isFinite(previewAudio.duration)) {
-          previewAudio.currentTime = previewAudio.duration * 0.4;
-        }
-      };
-      await previewAudio.play();
-      button.textContent = "⏸";
-      activePreviewButton = button;
-    } catch (err) {
-      button.textContent = "▶";
-    }
+    previewAudio.src = `/api/v1/musics/preview/${file}`;
+    previewAudio
+      .play()
+      .then(() => {
+        button.textContent = "⏸";
+        activePreviewButton = button;
+      })
+      .catch(() => {
+        button.textContent = "▶";
+      });
   }
-
-  previewAudio.addEventListener("ended", stopPreview);
 
   async function renderBgmTrackPicker(mood) {
     stopPreview();

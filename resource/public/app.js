@@ -3,7 +3,12 @@
 
   const API_KEY_STORAGE = "vf_api_key";
   const POLL_INTERVAL_MS = 3000;
-  const POLL_TIMEOUT_MS = 10 * 60 * 1000;
+  // Cloud Run com CPU limitada pode levar bem mais que 10min pra recodificar
+  // vários clipes em série + compor legenda + render final num vídeo mais
+  // longo — 10min desistia antes do servidor terminar (visto nos logs: um
+  // vídeo de 14 clipes ainda estava processando aos 7min30, só entrando na
+  // etapa final mais pesada).
+  const POLL_TIMEOUT_MS = 20 * 60 * 1000;
 
   const STATE_FAILED = -1;
   const STATE_COMPLETE = 1;
@@ -284,7 +289,7 @@
   async function pollTask(taskId) {
     if (Date.now() > pollDeadline) {
       showStatusError(
-        "A geração está demorando mais do que o esperado. O servidor pode estar acordando (plano gratuito) — tente de novo em instantes."
+        "A geração está demorando muito mais do que o normal. Vídeos mais longos podem levar vários minutos no servidor — se isso persistir, tente um roteiro mais curto ou verifique o painel do servidor."
       );
       return;
     }

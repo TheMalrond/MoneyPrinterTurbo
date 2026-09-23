@@ -342,6 +342,16 @@ Output and exit status:
         ),
     )
     audio_group.add_argument(
+        "--subtitle-provider",
+        choices=("edge", "whisper"),
+        default=None,
+        help=(
+            "override [app].subtitle_provider from config.toml for this run only; "
+            "use whisper together with --custom-audio-file so the subtitles (and the "
+            "script, when omitted) come from transcribing your own audio"
+        ),
+    )
+    audio_group.add_argument(
         "--bgm-type",
         type=_bgm_type,
         default=None,
@@ -472,8 +482,14 @@ Output and exit status:
     )
     args = parser.parse_args(argv)
 
-    if not args.video_subject.strip() and not args.video_script.strip():
-        parser.error("one of --video-subject or --video-script is required")
+    if (
+        not args.video_subject.strip()
+        and not args.video_script.strip()
+        and not (args.custom_audio_file or "").strip()
+    ):
+        parser.error(
+            "one of --video-subject, --video-script or --custom-audio-file is required"
+        )
 
     if args.video_source == "local" and args.stop_at == "terms":
         parser.error(
@@ -794,6 +810,12 @@ def run_cli(argv: Sequence[str] | None = None) -> int:
     # 保证 -h/--help 输出干净，同时不改变实际任务的初始化流程。
     from app.services import task as tm
     from app.utils import utils
+
+    if args.subtitle_provider:
+        from app.config import config
+
+        config.app["subtitle_provider"] = args.subtitle_provider
+        logger.info(f"subtitle provider overridden by CLI: {args.subtitle_provider}")
 
     task_id = args.task_id or utils.get_uuid()
     logger.info(f"start CLI task: task_id={task_id}, stop_at={args.stop_at}")

@@ -1,6 +1,7 @@
 import math
 import os
 import re
+import shutil
 import socket
 import threading
 import time
@@ -283,6 +284,12 @@ def _mark_task_failed(
 def generate_script(task_id, params):
     logger.info("\n\n## generating video script")
     video_script = params.video_script.strip()
+    custom_audio_file = (getattr(params, "custom_audio_file", None) or "").strip()
+    if not video_script and custom_audio_file:
+        # Áudio próprio sem roteiro: o texto vem da transcrição (Whisper), não do LLM.
+        # É o caso "mandei o áudio da narração, monta o vídeo" — não há chave de LLM
+        # configurada e nem precisa haver.
+        video_script = _transcribe_custom_audio(task_id, custom_audio_file)
     if not video_script:
         video_script = llm.generate_script(
             video_subject=params.video_subject,
@@ -299,6 +306,23 @@ def generate_script(task_id, params):
         return None
 
     return video_script
+
+
+def _transcribe_custom_audio(task_id: str, custom_audio_file: str) -> str:
+    """Transcreve o áudio próprio com o Whisper e devolve o texto corrido para servir de roteiro."""
+    try:
+        audio_path = resolve_custom_audio_file(task_id, custom_audio_file)
+    except ValueError as exc:
+        logger.error(f"custom audio file could not be resolved for transcription: {exc}")
+        return ""
+    srt_path = path.join(utils.task_dir(task_id), "transcript.srt")
+    logger.info(f"no script given; transcribing custom audio into a script: {audio_path}")
+    subtitle.create(audio_file=audio_path, subtitle_file=srt_path)
+    lines = [text for _, _, text in subtitle.file_to_subtitles(srt_path) if text.strip()]
+    script = " ".join(line.strip() for line in lines).strip()
+    if not script:
+        logger.error("transcription produced no text; is faster-whisper installed and the model reachable?")
+    return script
 
 
 def generate_terms(task_id, params, video_script):
@@ -582,7 +606,14 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
             return ""
 
     if subtitle_provider == "whisper":
-        subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
+        transcript_path = path.join(utils.task_dir(task_id), "transcript.srt")
+        if path.isfile(transcript_path) and os.path.getsize(transcript_path) > 0:
+            # O roteiro veio da transcrição deste mesmo áudio (áudio próprio sem roteiro):
+            # reaproveita o SRT em vez de rodar o Whisper uma segunda vez.
+            logger.info("reusing transcript.srt as the whisper subtitle (same audio, already transcribed)")
+            shutil.copyfile(transcript_path, subtitle_path)
+        else:
+            subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
         logger.info("\n\n## correcting subtitle")
         subtitle.correct(subtitle_file=subtitle_path, video_script=video_script)
 

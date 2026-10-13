@@ -985,7 +985,12 @@ def _tts_with_pauses(
     if not pause_segments:
         clean_text = utils.remove_pause_tags(text)
         return _single_tts(
-            clean_text, voice_name, voice_rate, voice_file, voice_volume, voice_pitch
+            clean_text,
+            voice_name,
+            voice_rate,
+            voice_file,
+            voice_volume,
+            **({"voice_pitch": voice_pitch} if voice_pitch not in ("", "+0Hz") else {}),
         )
 
     if not speech_segments:
@@ -1045,7 +1050,9 @@ def _tts_with_pauses(
                     voice_rate=voice_rate,
                     voice_file=chunk_audio_file,
                     voice_volume=voice_volume,
-                    voice_pitch=voice_pitch,
+                    # Só repassa o tom quando pedido: mantém a chamada idêntica à do
+                    # upstream no caso padrão (fakes dos testes de pausa não o aceitam).
+                    **({"voice_pitch": voice_pitch} if voice_pitch not in ("", "+0Hz") else {}),
                 )
                 if not chunk_submaker or not os.path.exists(chunk_audio_file) or os.path.getsize(chunk_audio_file) == 0:
                     logger.error(

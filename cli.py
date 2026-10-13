@@ -48,11 +48,11 @@ _CLI_VIDEO_SOURCES = (
     "muapi",
     "openai_image",
     "local",
-    # Fork Clippa: fotos reais das pastas de produto do Banco Ybera (Drive público);
-    # a forma combinada completa com Pexels a duração que o banco não cobrir.
-    "ybera_bank",
-    "ybera_bank,pexels",
 )
+# Fork Clippa: fotos reais das pastas de produto do Banco Ybera (Drive público);
+# a forma combinada completa com Pexels a duração que o banco não cobrir. Fica
+# fora da tupla acima, que o helper da skill do upstream (docs/skill) espelha.
+_CLI_VIDEO_SOURCES_WITH_FORK = _CLI_VIDEO_SOURCES + ("ybera_bank", "ybera_bank,pexels")
 
 
 class _CliHelpFormatter(
@@ -359,7 +359,7 @@ Batch manifests:
     material_group.add_argument(
         "--video-source",
         default="pexels",
-        choices=_CLI_VIDEO_SOURCES,
+        choices=_CLI_VIDEO_SOURCES_WITH_FORK,
         help="video material provider; online providers require matching API keys in config.toml",
     )
     material_group.add_argument(
@@ -1221,9 +1221,9 @@ def _validate_batch_task_params(
     if not params.video_subject.strip() and not params.video_script.strip():
         raise ValueError("one of video_subject or video_script is required")
 
-    if params.video_source not in _CLI_VIDEO_SOURCES:
+    if params.video_source not in _CLI_VIDEO_SOURCES_WITH_FORK:
         raise ValueError(
-            "video_source must be one of: " + ", ".join(_CLI_VIDEO_SOURCES)
+            "video_source must be one of: " + ", ".join(_CLI_VIDEO_SOURCES_WITH_FORK)
         )
     for field_name, value in (
         ("video_aspect", params.video_aspect),

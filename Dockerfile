@@ -11,8 +11,10 @@ ENV PYTHONPATH="/MoneyPrinterTurbo"
 
 # 本地用户默认继续优先使用国内镜像；GitHub Actions 发布 GHCR 镜像时使用 default，
 # 避免海外 runner 访问国内镜像过慢导致镜像发布长时间卡住。
-ARG DOCKER_BUILD_MIRROR=china
-ARG PIP_USE_OFFICIAL=0
+# Fork Clippa: o build roda no Cloud Build (fora da China); espelhos Aliyun/Tsinghua
+# deixaram o build de 13/10/2026 em 26 min até falhar. Padrão = repositórios oficiais.
+ARG DOCKER_BUILD_MIRROR=default
+ARG PIP_USE_OFFICIAL=1
 
 # 系统依赖安装需要同时满足两点：国内环境保留镜像回退能力，所有镜像均
 # 失败时必须让 Docker 构建立刻失败。旧循环最后执行的 sleep 总会返回 0，

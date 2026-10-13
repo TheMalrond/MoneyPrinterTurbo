@@ -33,6 +33,14 @@ def _attribute_name(node):
     return ".".join(reversed(names))
 
 
+def _log_record(file_path, message="generation finished"):
+    """构造 ``format_log_record`` 需要的最小 loguru 记录。"""
+    return {
+        "file": SimpleNamespace(name=os.path.basename(file_path), path=file_path),
+        "message": message,
+    }
+
+
 def test_generation_controls_submit_background_task_instead_of_blocking_page():
     """
     WebUI 生成按钮不能重新直接调用同步流水线。
@@ -132,6 +140,102 @@ def test_webui_runtime_config_updates_do_not_use_blocking_writes():
     assert direct_writes == []
 
 
+def test_active_task_uses_terminal_state_when_outside_runtime_page(tmp_path):
+    """An active session marker must not hide a finished task past page one."""
+    tree = ast.parse(WEBUI_MAIN.read_text(encoding="utf-8"))
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_collect_task_summaries"
+    )
+    namespace = {
+        "_scan_history_tasks": lambda limit: [],
+        "_active_generation_tasks": lambda: {
+            "new-task": {"subject": "Latest video", "mtime": 1000}
+        },
+        "_task_state_filter_key": lambda task: (
+            "failed" if task["state"] == const.TASK_STATE_FAILED else "processing"
+        ),
+        "sm": SimpleNamespace(
+            state=SimpleNamespace(
+                get_all_tasks=lambda page, page_size: (
+                    [
+                        {
+                            "task_id": f"old-{index}",
+                            "state": const.TASK_STATE_COMPLETE,
+                        }
+                        for index in range(50)
+                    ],
+                    51,
+                ),
+                get_task=MagicMock(
+                    return_value={
+                        "task_id": "new-task",
+                        "state": const.TASK_STATE_FAILED,
+                        "progress": 70,
+                    }
+                ),
+            )
+        ),
+        "utils": SimpleNamespace(task_dir=lambda: str(tmp_path)),
+        "os": os,
+        "const": const,
+        "logger": MagicMock(),
+    }
+    module = ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[]))
+    exec(compile(module, str(WEBUI_MAIN), "exec"), namespace)
+
+    tasks = namespace["_collect_task_summaries"](limit=20)
+
+    latest = next(task for task in tasks if task["task_id"] == "new-task")
+    assert latest["state"] == const.TASK_STATE_FAILED
+    assert latest["progress"] == 70
+    assert latest["mtime"] == 1000
+    namespace["sm"].state.get_task.assert_called_once_with("new-task")
+
+
+def test_task_summary_tolerates_directory_removed_during_scan():
+    """A concurrent deletion between isdir and stat must not crash the panel."""
+    tree = ast.parse(WEBUI_MAIN.read_text(encoding="utf-8"))
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_collect_task_summaries"
+    )
+    getmtime = MagicMock(side_effect=FileNotFoundError("task directory removed"))
+    namespace = {
+        "_scan_history_tasks": lambda limit: [],
+        "_active_generation_tasks": lambda: {},
+        "sm": SimpleNamespace(
+            state=SimpleNamespace(
+                get_all_tasks=lambda page, page_size: (
+                    [{"task_id": "removed-task", "state": const.TASK_STATE_COMPLETE}],
+                    1,
+                )
+            )
+        ),
+        "utils": SimpleNamespace(task_dir=lambda: "/tasks"),
+        "os": SimpleNamespace(
+            path=SimpleNamespace(
+                join=os.path.join,
+                isdir=lambda _path: True,
+                getmtime=getmtime,
+            )
+        ),
+        "logger": MagicMock(),
+    }
+    module = ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[]))
+    exec(compile(module, str(WEBUI_MAIN), "exec"), namespace)
+
+    tasks = namespace["_collect_task_summaries"]()
+
+    assert tasks[0]["task_id"] == "removed-task"
+    assert tasks[0]["mtime"] == 0
+    getmtime.assert_called_once_with(os.path.join("/tasks", "removed-task"))
+
+
 @pytest.mark.parametrize(
     ("ui_config", "expected_open_count"),
     [
@@ -140,14 +244,23 @@ def test_webui_runtime_config_updates_do_not_use_blocking_writes():
         ({"open_task_folder_on_completion": False}, 0),
     ],
 )
-def test_completed_task_renders_subject_named_video_download(
-    tmp_path, ui_config, expected_open_count
+@pytest.mark.parametrize(
+    ("task_state", "has_video"),
+    [
+        (const.TASK_STATE_COMPLETE, True),
+        (const.TASK_STATE_FAILED, True),
+        (const.TASK_STATE_FAILED, False),
+    ],
+)
+def test_terminal_task_renders_subject_named_video_download(
+    tmp_path, ui_config, expected_open_count, task_state, has_video
 ):
     """完成任务应提供成片下载，并按 WebUI 配置决定是否自动打开目录。"""
     tree = ast.parse(WEBUI_MAIN.read_text(encoding="utf-8"))
     selected_nodes = []
     target_names = {
         "_DOWNLOAD_FILENAME_INVALID_PATTERN",
+        "_WINDOWS_RESERVED_FILENAMES",
         "_build_video_download_name",
         "_normalize_task_state",
         "_render_generation_task_snapshot",
@@ -173,6 +286,9 @@ def test_completed_task_renders_subject_named_video_download(
             self.session_state = {}
             self.downloads = []
             self.videos = []
+            self.warnings = []
+            self.errors = []
+            self.successes = []
 
         def columns(self, count):
             return [FakeColumn() for _ in range(count)]
@@ -183,14 +299,14 @@ def test_completed_task_renders_subject_named_video_download(
         def download_button(self, label, data, **kwargs):
             self.downloads.append((label, data.read(), kwargs))
 
-        def success(self, _message):
-            pass
+        def success(self, message):
+            self.successes.append(message)
 
-        def warning(self, _message):
-            pass
+        def warning(self, message):
+            self.warnings.append(message)
 
-        def error(self, _message):
-            pass
+        def error(self, message):
+            self.errors.append(message)
 
     video_path = tmp_path / "final-1.mp4"
     video_path.write_bytes(b"video-content")
@@ -206,7 +322,10 @@ def test_completed_task_renders_subject_named_video_download(
         "os": os,
         "re": re,
         "st": fake_st,
-        "tr": lambda key: key,
+        "tr": lambda key: (
+            "Video {index} reused {count} source clips."
+            if key == "Batch Material Reuse Warning" else key
+        ),
         "_render_generation_logs": lambda _task_id: None,
     }
     module = ast.fix_missing_locations(ast.Module(body=selected_nodes, type_ignores=[]))
@@ -215,15 +334,31 @@ def test_completed_task_renders_subject_named_video_download(
     namespace["_render_generation_task_snapshot"](
         "download-test",
         {
-            "state": const.TASK_STATE_COMPLETE,
+            "state": task_state,
             "progress": 100,
-            "videos": [str(video_path)],
-            "warnings": [],
+            "videos": [str(video_path)] if has_video else [],
+            "error": "OSError: second encoder failed",
+            "warnings": [
+                {"code": "batch_materials_reused", "video_index": 2, "count": 3}
+            ],
             "video_subject": "A day: in / Shanghai?",
         },
     )
 
+    if task_state == const.TASK_STATE_FAILED:
+        expected_open_count = 0
+        assert fake_st.errors == ["Video Generation Failed: OSError: second encoder failed"]
+        assert fake_st.successes == []
+    else:
+        assert fake_st.errors == []
+        assert fake_st.successes == ["Video Generation Completed"]
+    if not has_video:
+        assert fake_st.downloads == []
+        assert fake_st.videos == []
+        open_task_folder.assert_not_called()
+        return
     assert fake_st.videos == [str(video_path)]
+    assert fake_st.warnings == ["Video 2 reused 3 source clips."]
     assert fake_st.downloads == [
         (
             "Download Video",
@@ -293,6 +428,36 @@ def test_submit_generation_copies_params_before_starting_worker():
     webui_task.sm.state.delete_task("copied-params-test")
 
 
+def test_submit_generation_keeps_voxcpm_reference_audio_out_of_params():
+    """参考音频仅属于内存中的当前请求，不能进入可持久化任务参数。"""
+    params = VideoParams(video_subject="task isolation")
+    reference_audio = b"bounded-reference-wav"
+    prompt_audio = b"bounded-prompt-wav"
+    prompt_text = "delivery transcript"
+    with patch.object(webui_task._task_manager, "add_task") as add_task:
+        webui_task.submit_generation(
+            "reference-audio-isolation",
+            params,
+            capture_logs=False,
+            voxcpm_reference_audio=reference_audio,
+            voxcpm_prompt_audio=prompt_audio,
+            voxcpm_prompt_text=prompt_text,
+        )
+
+    submitted_params = add_task.call_args.kwargs["params"]
+    serialized_params = submitted_params.model_dump_json()
+    assert "voxcpm_reference_audio" not in serialized_params
+    assert "voxcpm_prompt_audio" not in serialized_params
+    assert "voxcpm_prompt_text" not in serialized_params
+    assert reference_audio.decode("ascii") not in serialized_params
+    assert prompt_audio.decode("ascii") not in serialized_params
+    assert prompt_text not in serialized_params
+    assert add_task.call_args.kwargs["voxcpm_reference_audio"] == reference_audio
+    assert add_task.call_args.kwargs["voxcpm_prompt_audio"] == prompt_audio
+    assert add_task.call_args.kwargs["voxcpm_prompt_text"] == prompt_text
+    webui_task.sm.state.delete_task("reference-audio-isolation")
+
+
 def test_scheduling_failure_is_saved_as_terminal_task_state():
     """队列或线程启动失败时不能让任务管理器永久停留在“生成中”。"""
     task_id = "scheduling-failure-test"
@@ -345,6 +510,170 @@ def test_worker_logs_are_available_without_streamlit_session_state():
         r"- unique background task log",
         records[0],
     )
+
+
+def test_bound_helper_thread_logs_reach_the_task_log():
+    """
+    并行下载、片段编码和 ffmpeg 心跳都在任务启动的辅助线程里写日志。只按工作
+    线程 ID 过滤时这些记录会被丢弃，WebUI 在耗时最长的阶段反而没有任何输出。
+    经 bind_log_scope 绑定的辅助线程必须计入所属任务，未绑定的线程仍然排除，
+    否则同时运行的 API 任务日志会混进来。
+    """
+    task_id = "helper-thread-log-test"
+    with webui_task._task_logs_lock:
+        webui_task._task_logs.pop(task_id, None)
+
+    def logged_start(**_kwargs):
+        bound = threading.Thread(
+            target=logging_utils.bind_log_scope(
+                lambda: logger.info("bound helper thread log")
+            )
+        )
+        unrelated = threading.Thread(
+            target=lambda: logger.info("unrelated thread log")
+        )
+        for thread in (bound, unrelated):
+            thread.start()
+        for thread in (bound, unrelated):
+            thread.join()
+        return {"videos": []}
+
+    with (
+        patch.object(webui_task.tm, "start", side_effect=logged_start),
+        patch.object(
+            webui_task.config,
+            "runtime_config_lock",
+            return_value=nullcontext(),
+        ),
+    ):
+        webui_task._run_generation(
+            task_id,
+            VideoParams(video_subject="辅助线程日志"),
+            capture_logs=True,
+        )
+
+    messages = "\n".join(webui_task.get_task_logs(task_id))
+    assert "bound helper thread log" in messages
+    assert "unrelated thread log" not in messages
+
+
+def test_bind_log_scope_follows_nested_helpers_and_is_released():
+    """
+    辅助线程再启动的线程（例如并行片段里的心跳）也要归属最初的任务线程。
+    线程结束后必须解除绑定：线程 ID 会被系统复用，残留的映射会把之后无关
+    线程的日志错误地算进旧任务。
+    """
+    root_thread_id = threading.get_ident()
+    seen = {}
+
+    def inner():
+        seen["inner_scope"] = logging_utils.log_scope_thread_id()
+
+    def outer():
+        seen["outer_thread_id"] = threading.get_ident()
+        seen["outer_scope"] = logging_utils.log_scope_thread_id()
+        nested = threading.Thread(target=logging_utils.bind_log_scope(inner))
+        nested.start()
+        nested.join()
+
+    helper = threading.Thread(target=logging_utils.bind_log_scope(outer))
+    helper.start()
+    helper.join()
+
+    assert seen["outer_scope"] == root_thread_id
+    assert seen["inner_scope"] == root_thread_id
+    assert (
+        logging_utils.log_scope_thread_id(seen["outer_thread_id"])
+        == seen["outer_thread_id"]
+    )
+    assert logging_utils.log_scope_thread_id() == root_thread_id
+
+
+def test_bind_log_scope_runs_inline_calls_without_rebinding():
+    """同一线程内直接调用包装后的函数时保持原样返回值，不改动作用域。"""
+    bound = logging_utils.bind_log_scope(lambda value: value * 2)
+
+    assert bound(21) == 42
+    assert logging_utils.log_scope_thread_id() == threading.get_ident()
+
+
+def test_webui_worker_forwards_reference_audio_to_pipeline():
+    reference_audio = b"task-local-reference-wav"
+    prompt_audio = b"task-local-prompt-wav"
+    prompt_text = "task-local transcript"
+    with (
+        patch.object(webui_task.tm, "start", return_value={"videos": []}) as start,
+        patch.object(
+            webui_task.config,
+            "runtime_config_lock",
+            return_value=nullcontext(),
+        ),
+    ):
+        webui_task._run_generation(
+            "reference-audio-forwarding",
+            VideoParams(video_subject="reference forwarding"),
+            capture_logs=False,
+            voxcpm_reference_audio=reference_audio,
+            voxcpm_prompt_audio=prompt_audio,
+            voxcpm_prompt_text=prompt_text,
+        )
+
+    assert start.call_args.kwargs["voxcpm_reference_audio"] == reference_audio
+    assert start.call_args.kwargs["voxcpm_prompt_audio"] == prompt_audio
+    assert start.call_args.kwargs["voxcpm_prompt_text"] == prompt_text
+
+
+def test_log_paths_stay_posix_style_on_every_platform():
+    """
+    调用位置必须始终显示为 ``./app/services/task.py``。
+
+    Windows 的 ``os.path.relpath`` 返回反斜杠分隔的路径，直接拼接会输出
+    ``./app\\services\\task.py``，同一份日志在不同系统上格式不一致，也无法
+    和上面按正斜杠断言的后台日志回归测试对齐。
+    """
+    record = _log_record(
+        os.path.join(logging_utils.PROJECT_ROOT, "app", "services", "task.py")
+    )
+
+    logging_utils.format_log_record(record)
+
+    assert record["file"].path == "./app/services/task.py"
+
+
+def test_log_paths_on_another_mount_do_not_discard_the_record():
+    """
+    映射盘或 ``subst`` 盘启动时不能让整条日志消失。
+
+    这种部署下调用栈里的路径仍在 ``X:``，而 ``PROJECT_ROOT`` 已被 realpath
+    解析回 ``C:``，``os.path.relpath`` 会抛出 ``ValueError``。loguru 捕获
+    格式化异常后会丢弃记录，终端和 WebUI 日志面板会同时变空。
+    """
+    absolute_path = os.path.join(
+        logging_utils.PROJECT_ROOT, "app", "services", "task.py"
+    )
+    record = _log_record(absolute_path)
+
+    with patch.object(
+        logging_utils.os.path,
+        "relpath",
+        side_effect=ValueError("path is on mount 'X:', start on mount 'C:'"),
+    ):
+        log_format = logging_utils.format_log_record(record)
+
+    assert log_format == logging_utils.LOG_RECORD_FORMAT
+    assert record["file"].path == absolute_path
+
+
+def test_log_paths_outside_the_project_keep_the_absolute_path():
+    """项目目录之外的文件保持绝对路径，避免输出 ``./../..`` 这类回溯路径。"""
+    outside_path = os.path.join(
+        os.path.dirname(logging_utils.PROJECT_ROOT), "site-packages", "worker.py"
+    )
+    record = _log_record(outside_path)
+
+    logging_utils.format_log_record(record)
+
+    assert record["file"].path == outside_path
 
 
 def test_generation_log_fragment_refreshes_within_half_a_second():

@@ -14,6 +14,7 @@ português mesmo, com resultados piores, mas o vídeo continua sendo gerado.
 """
 
 import os
+import re
 
 from loguru import logger
 
@@ -35,6 +36,19 @@ def _looks_like_error(original: str, translated: str) -> bool:
     return len(translated) > max(120, len(original) * 4)
 
 
+# MyMemory às vezes devolve marcação de memória de tradução (<x id="1"/>,
+# <g id="2">…</g>) junto com o texto; isso não pode chegar à busca do Pexels.
+_INLINE_TAG = re.compile(r"</?[a-z]+(?:\s+id=\"[^\"]*\")?\s*/?>", re.I)
+
+
+def _clean(original: str, translated: str) -> str:
+    cleaned = " ".join(_INLINE_TAG.sub(" ", translated).split())
+    # Termo que já estava em inglês volta igual (só muda caixa): mantém o original.
+    if cleaned.lower() == original.lower():
+        return original
+    return cleaned
+
+
 def _translate_one(text: str) -> str:
     text = text.strip()
     if not text:
@@ -51,7 +65,9 @@ def _translate_one(text: str) -> str:
             source="pt-BR", target="en-GB", **kwargs
         ).translate(text)
         if translated and not _looks_like_error(text, translated):
-            return translated.strip()
+            cleaned = _clean(text, translated)
+            if cleaned:
+                return cleaned
         if translated:
             logger.warning(f"MyMemory returned an error payload for {text!r}: {translated!r}")
     except Exception as e:
@@ -62,7 +78,9 @@ def _translate_one(text: str) -> str:
 
         translated = GoogleTranslator(source="auto", target="en").translate(text)
         if translated and not _looks_like_error(text, translated):
-            return translated.strip()
+            cleaned = _clean(text, translated)
+            if cleaned:
+                return cleaned
         if translated:
             logger.warning(f"Google returned an error payload for {text!r}: {translated!r}")
     except Exception as e:

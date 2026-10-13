@@ -90,10 +90,17 @@ def _safe_response_error(response: requests.Response) -> str:
     except requests.RequestException:
         body_bytes = b""
     if isinstance(body_bytes, bytes):
-        body = body_bytes.decode(
-            response.encoding or "utf-8",
-            errors="replace",
-        )
+        try:
+            body = body_bytes.decode(
+                response.encoding or "utf-8",
+                errors="replace",
+            )
+        except LookupError:
+            # response.encoding 直接取自上游声明的 charset，未知取值（例如
+            # charset=unknown-charset）会让 codecs 抛 LookupError，而 errors
+            # 只影响 UnicodeDecodeError。旧的 response.text 会在内部退回
+            # UTF-8，这里保持同样行为，避免该异常绕过调用方的配乐降级链路。
+            body = body_bytes.decode("utf-8", errors="replace")
     else:
         body = str(body_bytes)
     body = body.strip().replace("\n", " ")[:MAX_ERROR_BODY_BYTES]
@@ -118,7 +125,13 @@ def test_connection() -> dict[str, Any]:
             headers={"xi-api-key": api_key},
             timeout=(15, 30),
             stream=True,
+            allow_redirects=False,
         ) as response:
+            if 300 <= response.status_code < 400:
+                raise ElevenLabsMusicError(
+                    "ElevenLabs account check returned a redirect; "
+                    "the API key was not forwarded"
+                )
             if response.status_code == 401:
                 raise ElevenLabsAuthenticationError(
                     "ElevenLabs API key was rejected (401): "
@@ -237,6 +250,8 @@ def _create_video_proxy(video_path: str) -> str:
             command,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=600,
             check=False,
         )
@@ -327,8 +342,14 @@ def _request_bgm(video_path: str, output_path: str, prompt: str) -> str:
                     data=request_data,
                     stream=True,
                     timeout=_request_timeout(),
+                    allow_redirects=False,
                 )
                 with response:
+                    if 300 <= response.status_code < 400:
+                        raise ElevenLabsMusicError(
+                            "ElevenLabs generation returned a redirect; "
+                            "the video and API key were not forwarded"
+                        )
                     if not response.ok:
                         raise ElevenLabsMusicError(
                             "ElevenLabs generation failed "

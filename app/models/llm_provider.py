@@ -42,6 +42,7 @@ class LLMProviderSpec:
     api_key_url: str = ""
     default_model: str = ""
     default_base_url: str = ""
+    model_docs_url: str = ""
     requires_api_key: bool = True
     requires_model_name: bool = True
     requires_base_url: bool = True
@@ -137,6 +138,13 @@ class LLMProviderSpec:
         )
         return endpoint.api_key_url if endpoint else self.api_key_url
 
+    def effective_model_docs_url(self, *, prefer_international: bool = False) -> str:
+        """统一解析模型列表与文档入口，避免 Endpoint Provider 重复维护链接。"""
+        endpoint = self.preferred_service_endpoint(
+            prefer_international=prefer_international
+        )
+        return endpoint.model_docs_url if endpoint and endpoint.model_docs_url else self.model_docs_url
+
     def find_service_endpoint(
         self, configured_base_url: str | None
     ) -> LLMProviderEndpoint | None:
@@ -197,12 +205,12 @@ LLM_PROVIDER_REGISTRY = (
                 base_url="https://api.moonshot.cn/v1",
                 api_key_url=(
                     "https://platform.kimi.com?"
-                    "track_id=track-2f5441d6ffd84c509dd079d78e9db5dc&"
+                    "track_id=track-6eec1e56a4494e52adcaebbcbbefce59&"
                     "aff=moneyprinterturbo"
                 ),
                 model_docs_url=(
                     "https://platform.kimi.com/docs/models?"
-                    "track_id=track-2f5441d6ffd84c509dd079d78e9db5dc&"
+                    "track_id=track-6eec1e56a4494e52adcaebbcbbefce59&"
                     "aff=moneyprinterturbo"
                 ),
             ),
@@ -212,14 +220,50 @@ LLM_PROVIDER_REGISTRY = (
                 base_url="https://api.moonshot.ai/v1",
                 api_key_url=(
                     "https://platform.kimi.ai?"
-                    "track_id=track-f6b0a640d35c41deb03b247242a1058c&"
+                    "track_id=track-9e3b711aa2594e378f6fe5b8de718a76&"
                     "aff=moneyprinterturbo"
                 ),
                 model_docs_url=(
                     "https://platform.kimi.ai/docs/models?"
-                    "track_id=track-f6b0a640d35c41deb03b247242a1058c&"
+                    "track_id=track-9e3b711aa2594e378f6fe5b8de718a76&"
                     "aff=moneyprinterturbo"
                 ),
+            ),
+        ),
+        default_service_endpoint_id="china",
+        international_service_endpoint_id="global",
+    ),
+    # Kimi 订阅（Plus 及以上档位的 Kimi Code 权益）采用 OAuth 设备授权：
+    # 用户在浏览器里一键确认后，服务层直接携带 Bearer token 调用官方
+    # OpenAI 兼容端点，不需要申请按量 API Key。中国站和 Global 使用各自
+    # 独立的账号与授权体系，endpoint 同步授权页、API 地址与订阅链接。
+    LLMProviderSpec(
+        "kimi_code",
+        "Kimi Code (Kimi subscription)",
+        adapter="kimi_code",
+        requires_api_key=False,
+        show_api_key=False,
+        requires_base_url=False,
+        show_base_url=False,
+        requires_model_name=False,
+        default_model="kimi-for-coding",
+        extra_fields=(
+            LLMProviderField("timeout", "Timeout (seconds)", default_value="300"),
+        ),
+        service_endpoints=(
+            LLMProviderEndpoint(
+                endpoint_id="china",
+                default_label="China",
+                base_url="https://api.kimi.com/coding/v1",
+                api_key_url="https://www.kimi.com/code?aff=moneyprinterturbo",
+                model_docs_url="https://platform.kimi.com/docs/models?aff=moneyprinterturbo",
+            ),
+            LLMProviderEndpoint(
+                endpoint_id="global",
+                default_label="Global",
+                base_url="https://api.kimi.ai/coding/v1",
+                api_key_url="https://www.kimi.ai/code?aff=moneyprinterturbo",
+                model_docs_url="https://platform.kimi.ai/docs/models?aff=moneyprinterturbo",
             ),
         ),
         default_service_endpoint_id="china",
@@ -310,6 +354,17 @@ LLM_PROVIDER_REGISTRY = (
         default_model="mimo-v2.5-pro",
         default_base_url="https://api.xiaomimimo.com/v1",
     ),
+    # 讯飞星辰 MaaS 的按量付费和 Token Plan 使用不同的 OpenAI 兼容地址，
+    # 两边的 API Key 不能混用。这里默认按量付费，Token Plan 用户在 Base URL
+    # 中改填 maas-token-api 的地址即可。
+    LLMProviderSpec(
+        "iflytek",
+        "iFlytek Spark (Astron MaaS)",
+        api_key_url="https://maas.xfyun.cn/",
+        default_model="spark-x2.5",
+        default_base_url="https://maas-api.cn-huabei-1.xf-yun.com/v2",
+        model_docs_url="https://maas.xfyun.cn/modelSquare",
+    ),
     # 聚合与统一接入平台
     LLMProviderSpec(
         "shengsuanyun",
@@ -317,6 +372,16 @@ LLM_PROVIDER_REGISTRY = (
         api_key_url="https://www.shengsuanyun.com/?from=CH_XUQ4OTSK",
         default_model="deepseek/deepseek-v4-flash",
         default_base_url="https://router.shengsuanyun.com/api/v1",
+    ),
+    # APIMart 同时提供 `/api/v1` 业务接口和 `/v1` OpenAI 兼容接口。
+    # 当前 LLM 服务层依赖 OpenAI SDK 直接读取 choices，因此必须使用不带
+    # code/data 外层包装的 `/v1` 入口，不能照搬异步业务接口的地址。
+    LLMProviderSpec(
+        "apimart",
+        "APIMart",
+        api_key_url="https://go.apimart.ai/gh-moneyprinterturbo",
+        default_model="gpt-5.6-terra",
+        default_base_url="https://api.apimart.ai/v1",
     ),
     LLMProviderSpec(
         "cloudflare",
@@ -365,12 +430,106 @@ LLM_PROVIDER_REGISTRY = (
         default_model="gpt-5.5",
         default_base_url="https://direct.evolink.ai/v1",
     ),
+    LLMProviderSpec(
+        "openrouter",
+        "OpenRouter",
+        api_key_url="https://openrouter.ai/settings/keys",
+        default_model="minimax/minimax-m3:free",
+        default_base_url="https://openrouter.ai/api/v1",
+    ),
+    LLMProviderSpec(
+        "api_route",
+        "API Route",
+        api_key_url="https://www.api-route.com",
+        default_model="gpt-5.4-mini",
+        default_base_url="https://www.api-route.com/v1",
+        model_docs_url="https://www.api-route.com/pricing",
+    ),
+    # Fluxion 的 OpenAI 分组使用 /v1 接口，复用现有 Chat Completions 适配器。
+    # 分组决定可用模型和地址，因此这里只提供默认值，保留用户覆盖配置的能力；
+    # Anthropic/Gemini 原生分组不能直接使用这个入口，避免协议不匹配。
+    LLMProviderSpec(
+        "fluxionai",
+        "Fluxion AI",
+        api_key_url=(
+            "https://fluxionai.space/register?source=github"
+            "&campaign=moneyprinterturbo&promo=MONEYPRINTERTURBO"
+        ),
+        default_model="gpt-5.5",
+        default_base_url="https://fluxionai.space/v1",
+        model_docs_url="https://fluxionai.space/model-plaza",
+    ),
+    LLMProviderSpec(
+        "cheaperinference",
+        "Cheaper Inference",
+        api_key_url="https://cheaperinference.com/signup",
+        default_model="gpt-5.4-mini",
+        default_base_url="https://api.cheaperinference.com/v1",
+        model_docs_url="https://cheaperinference.com/#models",
+    ),
+    LLMProviderSpec(
+        "requesty",
+        "Requesty",
+        api_key_url="https://app.requesty.ai/api-keys",
+        default_model="openai/gpt-5.4-mini",
+        default_base_url="https://router.requesty.ai/v1",
+        model_docs_url="https://www.requesty.ai/models",
+    ),
+    LLMProviderSpec(
+        "futureinfra",
+        "FutureInfra",
+        api_key_url="https://futureinfra.ai/console/?screen=ai-router",
+        default_model="openai/gpt-4o-mini",
+        default_base_url="https://futureinfra.ai/v1/ai",
+        model_docs_url="https://futureinfra.ai/ai/",
+    ),
+    LLMProviderSpec(
+        "yapi",
+        "Y-API",
+        api_key_url="https://y-api.bestvirtualgoods.com/app/keys",
+        default_model="deepseek/deepseek-v4-flash",
+        default_base_url="https://api.y-api.bestvirtualgoods.com/v1",
+        model_docs_url="https://y-api.bestvirtualgoods.com/models",
+    ),
+    LLMProviderSpec(
+        "opper",
+        "Opper",
+        api_key_url="https://platform.opper.ai",
+        default_model="gpt-5.4-mini",
+        default_base_url="https://api.opper.ai/v3/compat",
+        model_docs_url="https://opper.ai/models",
+    ),
+    LLMProviderSpec(
+        "onomeo",
+        "onomeo",
+        api_key_url="https://onomeo.com/dashboard",
+        default_model="auto",
+        default_base_url="https://onomeo.com/v1",
+        model_docs_url="https://onomeo.com/models",
+    ),
     # 本地部署与通用网关
     LLMProviderSpec(
         "ollama",
         "Ollama",
         requires_api_key=False,
         show_api_key=False,
+    ),
+    # Claude 订阅（Pro / Max / Team）不签发 API Key，凭证只能由 Claude Code
+    # 官方客户端使用，因此这个 Provider 不走 HTTP 接口，而是调用本机已登录
+    # 的 claude CLI。模型名留空即沿用 CLI 当前的默认模型。
+    LLMProviderSpec(
+        "claude_code",
+        "Claude Code (Claude subscription)",
+        adapter="claude_code",
+        requires_api_key=False,
+        show_api_key=False,
+        requires_base_url=False,
+        show_base_url=False,
+        requires_model_name=False,
+        extra_fields=(
+            LLMProviderField("cli_path", "Claude CLI Path"),
+            LLMProviderField("timeout", "Timeout (seconds)", default_value="300"),
+        ),
     ),
     LLMProviderSpec(
         "oneapi",
@@ -392,7 +551,7 @@ LLM_PROVIDER_REGISTRY = (
         "groq",
         "Groq",
         api_key_url="https://console.groq.com/keys",
-        default_model="llama-3.3-70b-versatile",
+        default_model="openai/gpt-oss-120b",
         default_base_url="https://api.groq.com/openai/v1",
     ),
     LLMProviderSpec(

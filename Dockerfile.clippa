@@ -4,7 +4,7 @@
 # Blueprint-less "New Web Service" flow) get the right entrypoint without any
 # extra "docker command" override step.
 
-FROM python:3.11-slim-bullseye
+FROM python:3.11-slim-bookworm
 
 WORKDIR /MoneyPrinterTurbo
 RUN chmod 777 /MoneyPrinterTurbo
@@ -16,8 +16,8 @@ ARG DOCKER_BUILD_MIRROR=default
 ARG PIP_USE_OFFICIAL=1
 
 RUN if [ "$DOCKER_BUILD_MIRROR" = "china" ]; then \
-        echo "deb http://mirrors.aliyun.com/debian bullseye main" > /etc/apt/sources.list && \
-        echo "deb http://mirrors.aliyun.com/debian-security bullseye-security main" >> /etc/apt/sources.list; \
+        echo "deb http://mirrors.aliyun.com/debian bookworm main" > /etc/apt/sources.list && \
+        echo "deb http://mirrors.aliyun.com/debian-security bookworm-security main" >> /etc/apt/sources.list; \
     else \
         echo "Using default Debian mirrors"; \
     fi && \
